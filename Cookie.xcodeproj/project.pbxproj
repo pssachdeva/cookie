@@ -1,0 +1,295 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C00C1E000000000000000011 /* CookieCore in Frameworks */ = {isa = PBXBuildFile; productRef = C00C1E000000000000000031 /* CookieCore */; };
+		C00C1E000000000000000012 /* CookieSync in Frameworks */ = {isa = PBXBuildFile; productRef = C00C1E000000000000000032 /* CookieSync */; };
+		C00C1E000000000000000013 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = C00C1E000000000000000023 /* AppIcon.icns */; };
+		C00C1E000000000000000014 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = C00C1E000000000000000024 /* AppIcon.svg */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		C00C1E000000000000000021 /* Cookie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cookie.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00C1E000000000000000022 /* . */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = .; sourceTree = "<group>"; };
+		C00C1E000000000000000023 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
+		C00C1E000000000000000024 /* AppIcon.svg */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = AppIcon.svg; sourceTree = "<group>"; };
+		C00C1E000000000000000025 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C00C1E000000000000000026 /* Cookie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Cookie.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C00C1E000000000000000041 /* Sources/CookieApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources/CookieApp;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C00C1E000000000000000051 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C00C1E000000000000000011 /* CookieCore in Frameworks */,
+				C00C1E000000000000000012 /* CookieSync in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C00C1E000000000000000061 = {
+			isa = PBXGroup;
+			children = (
+				C00C1E000000000000000022 /* . */,
+				C00C1E000000000000000041 /* Sources/CookieApp */,
+				C00C1E000000000000000062 /* App */,
+				C00C1E000000000000000063 /* Assets */,
+				C00C1E000000000000000064 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C00C1E000000000000000062 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				C00C1E000000000000000025 /* Info.plist */,
+				C00C1E000000000000000026 /* Cookie.entitlements */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C00C1E000000000000000063 /* Assets */ = {
+			isa = PBXGroup;
+			children = (
+				C00C1E000000000000000023 /* AppIcon.icns */,
+				C00C1E000000000000000024 /* AppIcon.svg */,
+			);
+			path = Assets;
+			sourceTree = "<group>";
+		};
+		C00C1E000000000000000064 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C00C1E000000000000000021 /* Cookie.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C00C1E000000000000000071 /* Cookie */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C00C1E000000000000000091 /* Build configuration list for PBXNativeTarget "Cookie" */;
+			buildPhases = (
+				C00C1E000000000000000072 /* Sources */,
+				C00C1E000000000000000051 /* Frameworks */,
+				C00C1E000000000000000073 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C00C1E000000000000000041 /* Sources/CookieApp */,
+			);
+			name = Cookie;
+			packageProductDependencies = (
+				C00C1E000000000000000031 /* CookieCore */,
+				C00C1E000000000000000032 /* CookieSync */,
+			);
+			productName = Cookie;
+			productReference = C00C1E000000000000000021 /* Cookie.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C00C1E000000000000000081 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					C00C1E000000000000000071 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = C00C1E000000000000000094 /* Build configuration list for PBXProject "Cookie" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C00C1E000000000000000061;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C00C1E000000000000000033 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C00C1E000000000000000064 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C00C1E000000000000000071 /* Cookie */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C00C1E000000000000000073 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C00C1E000000000000000013 /* AppIcon.icns in Resources */,
+				C00C1E000000000000000014 /* AppIcon.svg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C00C1E000000000000000072 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		C00C1E000000000000000092 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Cookie.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NVM5T46M98;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.psachdeva.cookie;
+				PRODUCT_NAME = Cookie;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		C00C1E000000000000000093 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Cookie.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NVM5T46M98;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.psachdeva.cookie;
+				PRODUCT_NAME = Cookie;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C00C1E000000000000000095 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		C00C1E000000000000000096 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C00C1E000000000000000091 /* Build configuration list for PBXNativeTarget "Cookie" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00C1E000000000000000092 /* Debug */,
+				C00C1E000000000000000093 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C00C1E000000000000000094 /* Build configuration list for PBXProject "Cookie" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00C1E000000000000000095 /* Debug */,
+				C00C1E000000000000000096 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C00C1E000000000000000033 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C00C1E000000000000000031 /* CookieCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CookieCore;
+		};
+		C00C1E000000000000000032 /* CookieSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CookieSync;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C00C1E000000000000000081 /* Project object */;
+}
