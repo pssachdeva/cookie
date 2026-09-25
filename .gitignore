@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+
+# Local planning notes, kept out of the repository.
+SPEC.md
