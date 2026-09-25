@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 iconset="$(mktemp -d)/AppIcon.iconset"
 swift scripts/render-icon.swift Assets/AppIcon.svg "$iconset"
 iconutil -c icns "$iconset" -o Assets/AppIcon.icns

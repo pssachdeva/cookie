@@ -17,7 +17,7 @@ for arg in "$@"; do
   esac
 done
 
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 swift build -c "$config" --product CookieApp
 
 # Regenerate the Dock icon when the SVG is newer than the .icns (or the .icns is missing).
