@@ -15,10 +15,11 @@ struct CookieApp: App {
         }
         let file = TaskFile(url: TaskFile.defaultURL())
         let store = TaskStore(tasks: file.load())
-        store.onChange = { [weak store] in
+        store.onChange = { [weak store] _ in
             guard let store else { return }
             file.scheduleSave { store.tasks }
         }
+        store.purgeDeleted(olderThan: TaskFile.deletedRetention)
         // Flush a pending save so a change made just before quitting lands.
         _ = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main

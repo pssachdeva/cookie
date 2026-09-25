@@ -12,8 +12,8 @@ public final class TaskFile {
     }
 
     static let currentVersion = 1
-    /// Deleted tasks are kept this long so undo and later sync can see them,
-    /// then dropped on load.
+    /// How long deleted tasks are kept before `TaskStore.purgeDeleted`
+    /// erases them: long enough for undo and for the deletion to sync.
     public static let deletedRetention: TimeInterval = 30 * 86_400
 
     public let url: URL
@@ -42,9 +42,7 @@ public final class TaskFile {
     public func load(now: Date = .now) -> [TaskItem] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         do {
-            let archive = try JSONDecoder.tasks.decode(Archive.self, from: data)
-            let cutoff = now.addingTimeInterval(-Self.deletedRetention)
-            return archive.tasks.filter { ($0.deletedAt ?? .distantFuture) > cutoff }
+            return try JSONDecoder.tasks.decode(Archive.self, from: data).tasks
         } catch {
             let stamp = Int(now.timeIntervalSince1970)
             let aside = url.deletingLastPathComponent().appending(path: "tasks-unreadable-\(stamp).json")
@@ -84,9 +82,26 @@ public final class TaskFile {
     }
 }
 
-/// ISO 8601 with fractional seconds: whole seconds would tie tasks completed
-/// in the same second, and the completed section is ordered by that time.
-private let dateFormat = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+/// ISO 8601 with milliseconds: whole seconds would tie tasks completed in
+/// the same second, and the completed section is ordered by that time.
+/// Written by hand because the formatter truncates rather than rounds, so
+/// .578 can come out as .577.
+enum TaskDateFormat {
+    private static let wholeSeconds = Date.ISO8601FormatStyle()
+    private static let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+
+    static func string(from date: Date) -> String {
+        let milliseconds = (date.timeIntervalSinceReferenceDate * 1000).rounded()
+        let seconds = (milliseconds / 1000).rounded(.down)
+        let fraction = Int(milliseconds - seconds * 1000)
+        let base = Date(timeIntervalSinceReferenceDate: seconds).formatted(wholeSeconds)
+        return base.dropLast() + String(format: ".%03dZ", fraction)
+    }
+
+    static func date(from string: String) throws -> Date {
+        try withFraction.parse(string)
+    }
+}
 
 private extension JSONEncoder {
     static var tasks: JSONEncoder {
@@ -95,7 +110,7 @@ private extension JSONEncoder {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(date.formatted(dateFormat))
+            try container.encode(TaskDateFormat.string(from: date))
         }
         return encoder
     }
@@ -106,7 +121,7 @@ private extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let text = try decoder.singleValueContainer().decode(String.self)
-            return try dateFormat.parse(text)
+            return try TaskDateFormat.date(from: text)
         }
         return decoder
     }

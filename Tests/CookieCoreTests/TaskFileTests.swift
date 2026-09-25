@@ -54,18 +54,32 @@ struct TaskFileTests {
         }
     }
 
-    @Test func oldDeletedTasksArePurgedOnLoad() throws {
-        try withTempFile { url in
-            let now = Date.now
-            let store = TaskStore()
-            let recent = store.add("deleted yesterday", to: sep17)!
-            let old = store.add("deleted long ago", to: sep17)!
-            store.delete(recent.id, at: now.addingTimeInterval(-86_400))
-            store.delete(old.id, at: now.addingTimeInterval(-40 * 86_400))
+    @Test func oldDeletedTasksArePurged() {
+        let now = Date.now
+        let store = TaskStore()
+        let recent = store.add("deleted yesterday", to: sep17)!
+        let old = store.add("deleted long ago", to: sep17)!
+        store.add("kept", to: sep17)
+        store.delete(recent.id, at: now.addingTimeInterval(-86_400))
+        store.delete(old.id, at: now.addingTimeInterval(-40 * 86_400))
 
-            let file = TaskFile(url: url)
-            file.saveNow(store.tasks)
-            #expect(file.load(now: now).map(\.text) == ["deleted yesterday"])
+        let purged = store.purgeDeleted(olderThan: TaskFile.deletedRetention, now: now)
+        #expect(purged == [old.id])
+        #expect(store.tasks.map(\.text) == ["deleted yesterday", "kept"])
+    }
+
+    @Test func filesWithoutFieldTimesStillLoad() throws {
+        try withTempFile { url in
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let json = """
+            {"version": 1, "tasks": [{"id": "B39820B9-1FA4-43A2-9140-8FFC65580190",
+              "text": "old format", "day": {"year": 2026, "month": 9, "day": 24}, "order": 0,
+              "createdAt": "2026-09-25T04:59:14.719Z", "modifiedAt": "2026-09-25T05:00:00.000Z"}]}
+            """
+            try Data(json.utf8).write(to: url)
+            let task = try #require(TaskFile(url: url).load().first)
+            #expect(task.text == "old format")
+            #expect(task.fieldTimes == FieldTimes(all: task.modifiedAt))
         }
     }
 
@@ -86,15 +100,31 @@ struct TaskFileTests {
         }
     }
 
-    @Test func storeReportsEveryChange() {
+    @Test func storeReportsEveryChangeWithItsOrigin() {
         let store = TaskStore()
-        var changes = 0
-        store.onChange = { changes += 1 }
+        var changes: [TaskStore.Change] = []
+        store.onChange = { changes.append($0) }
         let item = store.add("one", to: sep17)!
         store.updateText(item.id, "uno")
         store.setCompleted(item.id, true)
         store.move(item.id, to: sep17.adding(days: 1))
         store.delete(item.id)
-        #expect(changes == 5)
+        store.applyRemote([TaskItem(text: "from elsewhere", day: sep17, order: 5)])
+        #expect(changes.map(\.origin) == [.local, .local, .local, .local, .local, .remote])
+        #expect(changes.prefix(5).allSatisfy { $0.ids == [item.id] })
+    }
+}
+
+struct TaskDateFormatTests {
+    @Test func millisecondsRoundTripExactly() throws {
+        // Times whose binary value sits just below the millisecond, which a
+        // truncating formatter would write one millisecond short.
+        for ms in [578.0, 142.0, 999.0, 0.0, 1.0] {
+            let date = Date(timeIntervalSinceReferenceDate: 812_006_376 + ms / 1000)
+            let text = TaskDateFormat.string(from: date)
+            #expect(text.hasSuffix(String(format: ".%03dZ", Int(ms))))
+            let back = try TaskDateFormat.date(from: text)
+            #expect(abs(back.timeIntervalSince(date)) < 0.0001)
+        }
     }
 }
