@@ -70,21 +70,37 @@ struct CookieApp: App {
     }
 
     var body: some Scene {
+        // With the menu bar item present, closing this window leaves the app
+        // running; Command-Q quits both.
         Window("Cookie", id: "main") {
             MainWindowView(store: store)
                 .environment(store)
                 .tint(.cookieAccent)
-                .onAppear { store.insertion = insertAtTop ? .top : .bottom }
-                .onChange(of: insertAtTop) { _, top in store.insertion = top ? .top : .bottom }
+                .onChange(of: insertAtTop, initial: true, applyInsertion)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 360, height: 680)
 
+        MenuBarExtra {
+            MenuBarView(store: store)
+                .environment(store)
+                .tint(.cookieAccent)
+                .onChange(of: insertAtTop, initial: true, applyInsertion)
+        } label: {
+            Image(nsImage: .cookieMenuBarIcon)
+        }
+        .menuBarExtraStyle(.window)
+
         Settings {
             SettingsView()
                 .tint(.cookieAccent)
+                .onChange(of: insertAtTop, initial: true, applyInsertion)
         }
+    }
+
+    private func applyInsertion(_: Bool, _ top: Bool) {
+        store.insertion = top ? .top : .bottom
     }
 }
 

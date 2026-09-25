@@ -9,6 +9,9 @@ struct EntryBar: View {
     @Binding var draft: String
     @FocusState private var focused: Bool
     let day: CalendarDay
+    /// Bumped to put the cursor in the field, for windows (the menu bar
+    /// panel) that become active after the field appears.
+    var focusRequest = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -33,6 +36,7 @@ struct EntryBar: View {
         )
         .animation(.easeOut(duration: 0.15), value: focused)
         .onAppear { focused = true }
+        .onChange(of: focusRequest) { focused = true }
     }
 
     private var placeholder: String {
@@ -69,6 +73,8 @@ struct DayListView: View {
     @State private var scrolled = false
 
     let day: CalendarDay
+    /// Off in the menu bar panel, which shows the date in its own header.
+    var showsHeader = true
 
     private var isToday: Bool { day == navigation.today }
 
@@ -117,7 +123,7 @@ struct DayListView: View {
                         completedSection(completed)
                     }
                 } header: {
-                    dayHeader
+                    if showsHeader { dayHeader }
                 }
             }
             // Extra room so the last row clears the window's rounded corner.
@@ -248,6 +254,7 @@ struct TaskRow: View {
     @Environment(DragController.self) private var drag
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.taskDraggingEnabled) private var draggingEnabled
     let task: TaskItem
     /// Shown for earlier-unfinished rows so their assigned day is visible.
     let showsDate: Bool
@@ -357,8 +364,9 @@ struct TaskRow: View {
         .contentShape(Rectangle())
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
-        // No row drag while editing, so dragging selects text instead.
-        .gesture(dragGesture, including: editing ? .subviews : .all)
+        // No row drag while editing, so dragging selects text instead, or
+        // where dragging is turned off (the menu bar panel).
+        .gesture(dragGesture, including: editing || !draggingEnabled ? .subviews : .all)
         .contextMenu {
             Button("Edit", action: beginEditing)
             if showsDate {
@@ -562,4 +570,10 @@ struct CookieGlyph: View {
             Circle().fill(.orange)
         }
     }
+}
+
+extension EnvironmentValues {
+    /// Whether task rows can be dragged to move them. Off in the menu bar
+    /// panel, which only shows today and has nowhere to drag to.
+    @Entry var taskDraggingEnabled = true
 }

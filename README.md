@@ -13,6 +13,7 @@ Checking a task off rolls a cookie across the row.
 - **Editing.** Double-click a task, or right-click and choose Edit. Return saves, Escape cancels.
 - **Completed section.** Finished tasks move to a collapsible section for their day, in the order you completed them.
 - **Undo.** ⌘Z restores a deleted task or reverts an edit.
+- **Menu bar.** The cookie in the menu bar opens today's tasks with an entry field, whatever day the main window is showing. Closing the main window leaves Cookie running there; ⌘Q quits it entirely.
 - **iCloud sync.** Tasks sync through your private iCloud database. The app works fully offline and catches up when it's back online.
 
 | Shortcut | Action |
