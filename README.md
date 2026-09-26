@@ -9,7 +9,7 @@ Checking a task off rolls a cookie across the row.
 - **Month calendar.** Days with unfinished tasks get a dot: filled red once the day has passed, hollow for days still ahead. Collapse the calendar with the chevron beside the month (⌘⇧C), or drag the handle under it to resize.
 - **Quick entry.** The field under the calendar always adds to the selected day and keeps focus, so you can type several tasks in a row.
 - **Earlier section.** When today is selected, unfinished tasks from past days appear above today's list. They keep their original date; nothing rolls over on its own.
-- **Drag to reschedule.** Drag a task onto a calendar day, or hold it at the top or bottom edge of the list to step through days, then drop it where it belongs.
+- **Drag to reschedule.** Drag a task within the list to reorder it. To move it to another day, rest it on that day in the calendar: the list switches to that day, and you can drop the task where it belongs, or release it on the calendar day directly.
 - **Editing.** Double-click a task, or right-click and choose Edit. Return saves, Escape cancels.
 - **Completed section.** Finished tasks move to a collapsible section for their day, in the order you completed them.
 - **Undo.** ⌘Z restores a deleted task or reverts an edit.

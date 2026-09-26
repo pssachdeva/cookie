@@ -11,10 +11,11 @@ enum DropTarget: Equatable {
 
 /// In-window drag of a task row. Views report their frames (in the "window"
 /// coordinate space) here; the row's gesture feeds pointer locations; the
-/// overlay reads the ghost position, insertion line, and edge strips.
+/// overlay reads the ghost position and insertion line.
 ///
 /// This is a custom gesture rather than system drag-and-drop because the
-/// list under the pointer has to change days while the drag continues.
+/// list under the pointer has to change days while the drag continues:
+/// resting on a calendar day shows that day's list, ready for the drop.
 @MainActor
 @Observable
 final class DragController {
@@ -30,11 +31,8 @@ final class DragController {
         var location: CGPoint
     }
 
-    static let edgeStripHeight: CGFloat = 28
     static let cellDwell: TimeInterval = 0.35
     static let arrowDwell: TimeInterval = 0.5
-    static let edgeDwell: TimeInterval = 0.5
-    static let edgeRepeat: TimeInterval = 0.6
 
     private(set) var session: Session?
 
@@ -50,11 +48,8 @@ final class DragController {
 
     // Hover state.
     private(set) var hoverKey: AnyHashable?
-    private(set) var edge: VerticalEdge?
-    private(set) var edgeProgress: Double = 0
 
     @ObservationIgnored private var dwellTimer: Timer?
-    @ObservationIgnored private var edgeTimer: Timer?
     @ObservationIgnored private var keyMonitor: Any?
 
     private let navigation: DayNavigation
@@ -136,14 +131,6 @@ final class DragController {
         return index < frames.count ? frames[index].minY : frames[frames.count - 1].maxY
     }
 
-    var topStrip: CGRect {
-        CGRect(x: listFrame.minX, y: listFrame.minY, width: listFrame.width, height: Self.edgeStripHeight)
-    }
-
-    var bottomStrip: CGRect {
-        CGRect(x: listFrame.minX, y: listFrame.maxY - Self.edgeStripHeight, width: listFrame.width, height: Self.edgeStripHeight)
-    }
-
     private func hitCell(at p: CGPoint) -> CalendarDay? {
         // No targets while the calendar is folded away.
         guard !UserDefaults.standard.bool(forKey: "calendarCollapsed") else { return nil }
@@ -165,7 +152,7 @@ final class DragController {
         return frames.count
     }
 
-    // MARK: Hover, dwell, and edge advance
+    // MARK: Hover and dwell
 
     private func updateHover(at p: CGPoint) {
         // Calendar cells and month arrows share one dwell timer: a target
@@ -205,17 +192,6 @@ final class DragController {
                 dwellTimer = schedule(after: delay, repeats: false) { action() }
             }
         }
-
-        let zone: VerticalEdge? = topStrip.contains(p) ? .top : bottomStrip.contains(p) ? .bottom : nil
-        if zone != edge {
-            edge = zone
-            edgeTimer?.invalidate()
-            edgeTimer = nil
-            edgeProgress = 0
-            if let zone {
-                armEdge(zone)
-            }
-        }
     }
 
     /// Mirrors the header arrows: months while the grid is shown, days when
@@ -226,24 +202,6 @@ final class DragController {
         } else {
             navigation.showMonth(navigation.displayedMonth.adding(months: amount))
         }
-    }
-
-    private func armEdge(_ zone: VerticalEdge) {
-        withAnimation(.linear(duration: Self.edgeDwell)) { edgeProgress = 1 }
-        edgeTimer = schedule(after: Self.edgeDwell, repeats: false) { [weak self] in
-            guard let self else { return }
-            self.advanceDay(zone)
-            self.edgeTimer = self.schedule(after: Self.edgeRepeat, repeats: true) { [weak self] in
-                self?.advanceDay(zone)
-            }
-        }
-    }
-
-    private func advanceDay(_ zone: VerticalEdge) {
-        let next = navigation.selectedDay.adding(days: zone == .top ? -1 : 1)
-        withAnimation(.snappy(duration: 0.3)) { navigation.select(next) }
-        edgeProgress = 0
-        withAnimation(.linear(duration: Self.edgeRepeat)) { edgeProgress = 1 }
     }
 
     private func schedule(after interval: TimeInterval, repeats: Bool, _ block: @escaping @MainActor () -> Void) -> Timer {
@@ -257,19 +215,15 @@ final class DragController {
 
     private func reset() {
         dwellTimer?.invalidate()
-        edgeTimer?.invalidate()
         dwellTimer = nil
-        edgeTimer = nil
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         session = nil
         hoverKey = nil
-        edge = nil
-        edgeProgress = 0
     }
 }
 
-/// Ghost row, insertion line, and day-advance strips, drawn over the whole
+/// Ghost row and insertion line, drawn over the whole
 /// window in its coordinate space. Never intercepts the pointer.
 struct DragOverlay: View {
     let drag: DragController
@@ -277,7 +231,6 @@ struct DragOverlay: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let session = drag.session {
-                strips
                 if let y = drag.insertionY {
                     Rectangle()
                         .fill(Color.cookieAccent)
@@ -318,32 +271,5 @@ struct DragOverlay: View {
             x: session.location.x - session.grabOffset.width,
             y: session.location.y - session.grabOffset.height
         )
-    }
-
-    private var strips: some View {
-        Group {
-            strip(.top, label: "Previous day", systemImage: "chevron.up", frame: drag.topStrip)
-            strip(.bottom, label: "Next day", systemImage: "chevron.down", frame: drag.bottomStrip)
-        }
-    }
-
-    private func strip(_ zone: VerticalEdge, label: String, systemImage: String, frame: CGRect) -> some View {
-        let active = drag.edge == zone
-        return ZStack(alignment: .leading) {
-            Rectangle().fill(.background)
-            Rectangle()
-                .fill(Color.cookieAccent.opacity(0.18))
-                .frame(width: active ? frame.width * drag.edgeProgress : 0)
-            Label(label, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(active ? Color.cookieAccent : .secondary)
-                .frame(maxWidth: .infinity)
-        }
-        .overlay(alignment: zone == .top ? .bottom : .top) {
-            Divider()
-        }
-        .frame(width: frame.width, height: frame.height)
-        .offset(x: frame.minX, y: frame.minY)
-        .transition(.opacity)
     }
 }
