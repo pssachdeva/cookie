@@ -51,6 +51,7 @@ final class DragController {
 
     @ObservationIgnored private var dwellTimer: Timer?
     @ObservationIgnored private var keyMonitor: Any?
+    @ObservationIgnored private var mouseMonitor: Any?
 
     private let navigation: DayNavigation
     private let store: TaskStore
@@ -62,24 +63,44 @@ final class DragController {
 
     var isDragging: Bool { session != nil }
 
-    // MARK: Gesture entry points
+    // MARK: Session
 
-    func begin(task: TaskItem, rowFrame: CGRect, at location: CGPoint) {
+    /// Starts a drag from a row's gesture. From here on the drag follows the
+    /// mouse itself rather than the row's gesture: resting on a calendar day
+    /// swaps the list, which removes the row (and its gesture) mid-drag.
+    func begin(task: TaskItem, rowFrame: CGRect, grabbedAt start: CGPoint, now location: CGPoint) {
         guard session == nil else { return }
         session = Session(
             taskID: task.id,
             text: task.text,
             isCompleted: task.isCompleted,
             sourceDay: task.day,
-            grabOffset: CGSize(width: location.x - rowFrame.minX, height: location.y - rowFrame.minY),
+            grabOffset: CGSize(width: start.x - rowFrame.minX, height: start.y - rowFrame.minY),
             width: rowFrame.width,
             location: location
         )
+        updateHover(at: location)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return event } // Escape
             MainActor.assumeIsolated { self?.cancel() }
             return nil
         }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let location = Self.windowLocation(of: event) else { return }
+                self.update(location: location)
+                if event.type == .leftMouseUp { self.end() }
+            }
+            return event
+        }
+    }
+
+    /// The event's position in the "window" coordinate space: points from
+    /// the window's top-left, since the content runs under the title bar.
+    private static func windowLocation(of event: NSEvent) -> CGPoint? {
+        guard let window = event.window else { return nil }
+        let point = event.locationInWindow
+        return CGPoint(x: point.x, y: window.frame.height - point.y)
     }
 
     func update(location: CGPoint) {
@@ -217,7 +238,9 @@ final class DragController {
         dwellTimer?.invalidate()
         dwellTimer = nil
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         keyMonitor = nil
+        mouseMonitor = nil
         session = nil
         hoverKey = nil
     }

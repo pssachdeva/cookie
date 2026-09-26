@@ -377,15 +377,18 @@ struct TaskRow: View {
     }
 
     private var dragGesture: some Gesture {
+        // Only starts the drag; the controller then follows the mouse on its
+        // own, since this row can disappear mid-drag when the list changes.
         DragGesture(minimumDistance: 4, coordinateSpace: .named(windowSpace))
             .onChanged { value in
                 if !dragStarted {
                     dragStarted = true
-                    drag.begin(task: task, rowFrame: frame, at: value.startLocation)
+                    drag.begin(task: task, rowFrame: frame, grabbedAt: value.startLocation, now: value.location)
                 }
-                drag.update(location: value.location)
             }
             .onEnded { _ in
+                // Normally the controller has already ended the drag on
+                // mouse-up; this is a no-op then.
                 drag.end()
                 dragStarted = false
             }
