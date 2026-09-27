@@ -31,12 +31,24 @@ public final class CloudSync: CKSyncEngineDelegate {
     /// True when this build is signed with the iCloud entitlement. Script
     /// builds aren't, and CloudKit would refuse (or crash) without it.
     public static var isEntitled: Bool {
+        #if os(macOS)
         guard let task = SecTaskCreateFromSelf(nil),
               let services = SecTaskCopyValueForEntitlement(
                 task, "com.apple.developer.icloud-services" as CFString, nil
               ) as? [String]
         else { return false }
         return services.contains("CloudKit")
+        #else
+        // iOS can't read its own entitlements; the provisioning profile it
+        // was installed with lists them instead. Simulator builds and builds
+        // from teams without iCloud have no profile granting it.
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let profile = String(data: data, encoding: .isoLatin1)
+        else { return false }
+        return profile.contains("com.apple.developer.icloud-services")
+            && profile.contains(containerIdentifier)
+        #endif
     }
 
     public func start() {

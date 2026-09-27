@@ -5,6 +5,7 @@ struct CalendarView: View {
     @Environment(TaskStore.self) private var store
     @Environment(DragController.self) private var drag
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.calendarHeaderMetrics) private var headerMetrics
     // withAnimation cannot animate an @AppStorage change (it arrives via
     // UserDefaults, outside the transaction), so the layout is driven by a
     // @State mirror and the stored value is written alongside it.
@@ -89,12 +90,14 @@ struct CalendarView: View {
             .layoutPriority(1)
             .help(collapsed ? "Show calendar" : "Hide calendar")
             .keyboardShortcut("c", modifiers: [.command, .shift])
-            // The header shares the hidden title bar's row, so its empty
-            // stretch has to move the window like a title bar would.
+            // On the Mac the header shares the hidden title bar's row, so its
+            // empty stretch has to move the window like a title bar would.
             Color.clear
                 .frame(maxWidth: .infinity, minHeight: 24)
                 .contentShape(Rectangle())
+                #if os(macOS)
                 .gesture(WindowDragGesture())
+                #endif
             Button("Today") { withAnimation(.smooth(duration: 0.3)) { navigation.goToToday() } }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Color.cookieAccent)
@@ -113,9 +116,9 @@ struct CalendarView: View {
         }
         .buttonStyle(HeaderButtonStyle())
         .foregroundStyle(.secondary)
-        // Clear the traffic lights, which sit on this row.
-        .padding(.leading, MainWindowView.trafficLightInset)
-        .frame(height: MainWindowView.titleBarHeight)
+        // On the Mac, clear the traffic lights, which sit on this row.
+        .padding(.leading, headerMetrics.leadingInset)
+        .frame(height: headerMetrics.height)
     }
 
     private var weekdayRow: some View {
@@ -309,7 +312,9 @@ struct CalendarSizeHandle: View {
             .contentShape(Rectangle())
             .onHover { inside in
                 hovering = inside
+                #if os(macOS)
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                #endif
             }
             .gesture(
                 DragGesture(minimumDistance: 1)

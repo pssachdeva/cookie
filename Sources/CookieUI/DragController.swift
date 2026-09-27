@@ -1,6 +1,8 @@
 import SwiftUI
-import AppKit
 import CookieCore
+#if os(macOS)
+import AppKit
+#endif
 
 /// Where a dragged task would land if released now.
 enum DropTarget: Equatable {
@@ -18,7 +20,7 @@ enum DropTarget: Equatable {
 /// resting on a calendar day shows that day's list, ready for the drop.
 @MainActor
 @Observable
-final class DragController {
+public final class DragController {
     struct Session {
         let taskID: UUID
         let text: String
@@ -29,6 +31,9 @@ final class DragController {
         let grabOffset: CGSize
         let width: CGFloat
         var location: CGPoint
+        /// Touch drags use the system's own lifted preview, so the overlay
+        /// draws no ghost for them.
+        var showsGhost = true
     }
 
     static let cellDwell: TimeInterval = 0.35
@@ -50,13 +55,15 @@ final class DragController {
     private(set) var hoverKey: AnyHashable?
 
     @ObservationIgnored private var dwellTimer: Timer?
+    #if os(macOS)
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var mouseMonitor: Any?
+    #endif
 
     private let navigation: DayNavigation
     private let store: TaskStore
 
-    init(navigation: DayNavigation, store: TaskStore) {
+    public init(navigation: DayNavigation, store: TaskStore) {
         self.navigation = navigation
         self.store = store
     }
@@ -65,6 +72,7 @@ final class DragController {
 
     // MARK: Session
 
+    #if os(macOS)
     /// Starts a drag from a row's gesture. From here on the drag follows the
     /// mouse itself rather than the row's gesture: resting on a calendar day
     /// swaps the list, which removes the row (and its gesture) mid-drag.
@@ -102,6 +110,25 @@ final class DragController {
         let point = event.locationInWindow
         return CGPoint(x: point.x, y: window.frame.height - point.y)
     }
+    #else
+    /// Starts a touch drag, when the system lifts a row. Positions then
+    /// arrive from `TaskDropDelegate` as the finger moves.
+    func beginTouch(task: TaskItem) {
+        // A drag the system cut short (an incoming call, say) never
+        // reported its end; clear it.
+        reset()
+        session = Session(
+            taskID: task.id,
+            text: task.text,
+            isCompleted: task.isCompleted,
+            sourceDay: task.day,
+            grabOffset: .zero,
+            width: 0,
+            location: .zero,
+            showsGhost: false
+        )
+    }
+    #endif
 
     func update(location: CGPoint) {
         guard session != nil else { return }
@@ -237,10 +264,12 @@ final class DragController {
     private func reset() {
         dwellTimer?.invalidate()
         dwellTimer = nil
+        #if os(macOS)
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         keyMonitor = nil
         mouseMonitor = nil
+        #endif
         session = nil
         hoverKey = nil
     }
@@ -261,7 +290,7 @@ struct DragOverlay: View {
                         .offset(x: drag.listFrame.minX + 16, y: y - 1)
                         .transition(.opacity)
                 }
-                ghost(session)
+                if session.showsGhost { ghost(session) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -296,3 +325,35 @@ struct DragOverlay: View {
         )
     }
 }
+
+#if os(iOS)
+/// Feeds a touch drag's position to the drag controller. Attached to the
+/// whole planner, so the finger's location is already in the shared
+/// coordinate space, and every release lands here (the planner fills the
+/// screen), which is what ends the session.
+struct TaskDropDelegate: DropDelegate {
+    let drag: DragController
+
+    func validateDrop(info: DropInfo) -> Bool {
+        drag.isDragging
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        drag.update(location: info.location)
+        // Always accept, even over places that aren't targets, so the
+        // release always arrives in `performDrop` and ends the session.
+        return DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        drag.update(location: info.location)
+        let moved = drag.target != .none
+        drag.end()
+        return moved
+    }
+
+    func dropExited(info: DropInfo) {
+        drag.cancel()
+    }
+}
+#endif

@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C00C1E000000000000000011 /* CookieCore in Frameworks */ = {isa = PBXBuildFile; productRef = C00C1E000000000000000031 /* CookieCore */; };
-		C00C1E000000000000000012 /* CookieSync in Frameworks */ = {isa = PBXBuildFile; productRef = C00C1E000000000000000032 /* CookieSync */; };
+		C00C1E000000000000000012 /* CookieUI in Frameworks */ = {isa = PBXBuildFile; productRef = C00C1E000000000000000032 /* CookieUI */; };
 		C00C1E000000000000000013 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = C00C1E000000000000000023 /* AppIcon.icns */; };
 		C00C1E000000000000000014 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = C00C1E000000000000000024 /* AppIcon.svg */; };
 /* End PBXBuildFile section */
@@ -36,7 +36,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C00C1E000000000000000011 /* CookieCore in Frameworks */,
-				C00C1E000000000000000012 /* CookieSync in Frameworks */,
+				C00C1E000000000000000012 /* CookieUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,7 +101,7 @@
 			name = Cookie;
 			packageProductDependencies = (
 				C00C1E000000000000000031 /* CookieCore */,
-				C00C1E000000000000000032 /* CookieSync */,
+				C00C1E000000000000000032 /* CookieUI */,
 			);
 			productName = Cookie;
 			productReference = C00C1E000000000000000021 /* Cookie.app */;
@@ -285,9 +285,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = CookieCore;
 		};
-		C00C1E000000000000000032 /* CookieSync */ = {
+		C00C1E000000000000000032 /* CookieUI */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = CookieSync;
+			productName = CookieUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

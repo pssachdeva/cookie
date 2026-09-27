@@ -1,6 +1,6 @@
 import SwiftUI
 import CookieCore
-import CookieSync
+import CookieUI
 
 @main
 struct CookieApp: App {
@@ -8,55 +8,21 @@ struct CookieApp: App {
     @AppStorage("insertAtTop") private var insertAtTop = false
 
     init() {
-        let environment = ProcessInfo.processInfo.environment
-        // COOKIE_SAMPLE_DATA=1 runs on the prototype's sample tasks, in
-        // memory only, so trying things out never touches saved tasks.
-        if environment["COOKIE_SAMPLE_DATA"] == "1" {
-            _store = State(initialValue: .sample())
-            return
-        }
-        let file = TaskFile(url: TaskFile.defaultURL())
-        let store = TaskStore(tasks: file.load())
+        let model = CookieModel()
+        _store = State(initialValue: model.store)
 
-        // iCloud sync needs a build signed with the iCloud entitlement, and
-        // stays off for scratch data so test tasks never reach iCloud.
-        let syncEnabled = CloudSync.isEntitled
-            && environment["COOKIE_DATA_DIR"] == nil
-            && environment["COOKIE_DISABLE_SYNC"] != "1"
-        let sync = syncEnabled ? CloudSync(
-            store: store,
-            stateURL: file.url.deletingLastPathComponent().appending(path: "sync-state.plist"),
-            flushTasks: { [weak store] in if let store { file.saveNow(store.tasks) } }
-        ) : nil
-
-        store.onChange = { [weak store] change in
-            guard let store else { return }
-            file.scheduleSave { store.tasks }
-            if change.origin == .local { sync?.localChange(change.ids) }
-        }
-        store.purgeDeleted(olderThan: TaskFile.deletedRetention)
-        if let sync {
-            sync.start()
-            Self.observePushesAndActivation(for: sync)
-        }
-
-        // Flush a pending save so a change made just before quitting lands.
-        _ = NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
-        ) { [weak store] _ in
-            MainActor.assumeIsolated {
-                if let store { file.saveNow(store.tasks) }
-            }
-        }
-        _store = State(initialValue: store)
-    }
-
-    /// Registers for the silent pushes CloudKit sends when another device
-    /// changes something (the sync engine picks them up itself), and checks
-    /// for changes whenever the app comes to the front, in case one was
-    /// missed.
-    private static func observePushesAndActivation(for sync: CloudSync) {
         let center = NotificationCenter.default
+        // Flush a pending save so a change made just before quitting lands.
+        _ = center.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { model.flush() }
+        }
+        guard model.sync != nil else { return }
+        // Register for the silent pushes CloudKit sends when another device
+        // changes something (the sync engine picks them up itself), and check
+        // for changes whenever the app comes to the front, in case one was
+        // missed.
         _ = center.addObserver(
             forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
         ) { _ in
@@ -65,7 +31,7 @@ struct CookieApp: App {
         _ = center.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { _ in
-            MainActor.assumeIsolated { sync.fetchChanges() }
+            MainActor.assumeIsolated { model.fetchChanges() }
         }
     }
 

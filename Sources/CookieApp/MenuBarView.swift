@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CookieCore
+import CookieUI
 
 /// The menu bar panel: today's tasks, with the Earlier and Completed
 /// sections and an entry field, plus a way into the main window. It always

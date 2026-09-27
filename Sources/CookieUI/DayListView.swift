@@ -3,7 +3,7 @@ import CookieCore
 
 /// The single entry field. Lives outside the day list so its draft survives
 /// switching days, and always adds to the currently selected day.
-struct EntryBar: View {
+public struct EntryBar: View {
     @Environment(TaskStore.self) private var store
     @Environment(DayNavigation.self) private var navigation
     @Binding var draft: String
@@ -13,7 +13,13 @@ struct EntryBar: View {
     /// panel) that become active after the field appears.
     var focusRequest = 0
 
-    var body: some View {
+    public init(draft: Binding<String>, day: CalendarDay, focusRequest: Int = 0) {
+        _draft = draft
+        self.day = day
+        self.focusRequest = focusRequest
+    }
+
+    public var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "plus")
                 .font(.system(size: 13, weight: .semibold))
@@ -35,7 +41,11 @@ struct EntryBar: View {
                 .strokeBorder(Color.cookieAccent.opacity(focused ? 0.5 : 0), lineWidth: 1)
         )
         .animation(.easeOut(duration: 0.15), value: focused)
+        #if os(macOS)
+        // Ready to type on launch. Not on the iPhone, where the keyboard
+        // would cover half the screen before anything is asked of it.
         .onAppear { focused = true }
+        #endif
         .onChange(of: focusRequest) { focused = true }
     }
 
@@ -58,7 +68,7 @@ struct EntryBar: View {
     }
 }
 
-struct DayListView: View {
+public struct DayListView: View {
     @Environment(TaskStore.self) private var store
     @Environment(DayNavigation.self) private var navigation
     @Environment(DragController.self) private var drag
@@ -76,9 +86,14 @@ struct DayListView: View {
     /// Off in the menu bar panel, which shows the date in its own header.
     var showsHeader = true
 
+    public init(day: CalendarDay, showsHeader: Bool = true) {
+        self.day = day
+        self.showsHeader = showsHeader
+    }
+
     private var isToday: Bool { day == navigation.today }
 
-    var body: some View {
+    public var body: some View {
         let active = store.activeTasks(on: day)
         let completed = store.completedTasks(on: day)
         let earlier = isToday ? store.earlierUnfinished(before: day) : []
@@ -364,9 +379,18 @@ struct TaskRow: View {
         .contentShape(Rectangle())
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
+        #if os(macOS)
         // No row drag while editing, so dragging selects text instead, or
         // where dragging is turned off (the menu bar panel).
         .gesture(dragGesture, including: editing || !draggingEnabled ? .subviews : .all)
+        #else
+        // Press and hold to lift the row, then drag; a hold without moving
+        // opens the context menu instead.
+        .onDrag {
+            drag.beginTouch(task: task)
+            return NSItemProvider(object: task.id.uuidString as NSString)
+        }
+        #endif
         .contextMenu {
             Button("Edit", action: beginEditing)
             if showsDate {
@@ -376,6 +400,7 @@ struct TaskRow: View {
         }
     }
 
+    #if os(macOS)
     private var dragGesture: some Gesture {
         // Only starts the drag; the controller then follows the mouse on its
         // own, since this row can disappear mid-drag when the list changes.
@@ -393,6 +418,7 @@ struct TaskRow: View {
                 dragStarted = false
             }
     }
+    #endif
 
     /// Same font and wrapping as the label, so entering edit mode doesn't
     /// shift the row.
@@ -402,7 +428,9 @@ struct TaskRow: View {
             .font(.body)
             .focused($editFocused)
             .onSubmit(commitEdit)
+            #if os(macOS)
             .onExitCommand(perform: cancelEdit)
+            #endif
             .onChange(of: editFocused) { _, focused in
                 // Clicking elsewhere commits, like renaming in Finder.
                 if !focused { commitEdit() }
@@ -523,6 +551,12 @@ struct CheckCircle: View {
     static let ringSize: CGFloat = 18
     /// Larger than the ring so the cookie covers it completely.
     static let cookieSize: CGFloat = 22
+    /// Hit area beyond the ring: a fingertip needs far more than a pointer.
+    #if os(macOS)
+    static let touchSlop: CGFloat = 2
+    #else
+    static let touchSlop: CGFloat = 12
+    #endif
 
     @State private var hovering = false
 
@@ -542,9 +576,12 @@ struct CheckCircle: View {
                     .opacity(checked && !cookieHidden ? 1 : 0)
             }
             .frame(width: Self.ringSize, height: Self.ringSize)
-            .contentShape(Circle())
+            .padding(Self.touchSlop)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // The extra hit area around the ring doesn't take up layout space.
+        .padding(-Self.touchSlop)
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.12)) { hovering = inside }
         }
@@ -552,9 +589,12 @@ struct CheckCircle: View {
     }
 }
 
-/// The app's cookie, drawn from the bundled SVG (the same source as the Dock
-/// icon), with the Dock icon as a fallback when running outside the bundle.
+/// The app's cookie. On the Mac, drawn from the bundled SVG (the same source
+/// as the Dock icon), with the Dock icon as a fallback when running outside
+/// the bundle; on the iPhone, the "Cookie" image in the app's asset catalog,
+/// rendered from the same SVG.
 struct CookieGlyph: View {
+    #if os(macOS)
     private static let image: NSImage? = {
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
@@ -562,8 +602,10 @@ struct CookieGlyph: View {
         }
         return NSApp.applicationIconImage
     }()
+    #endif
 
     var body: some View {
+        #if os(macOS)
         if let image = Self.image {
             Image(nsImage: image)
                 .resizable()
@@ -572,11 +614,17 @@ struct CookieGlyph: View {
         } else {
             Circle().fill(.orange)
         }
+        #else
+        Image("Cookie")
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+        #endif
     }
 }
 
 extension EnvironmentValues {
     /// Whether task rows can be dragged to move them. Off in the menu bar
     /// panel, which only shows today and has nowhere to drag to.
-    @Entry var taskDraggingEnabled = true
+    @Entry public var taskDraggingEnabled = true
 }
