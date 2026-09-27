@@ -325,7 +325,6 @@ struct TaskRow: View {
                     editor
                 } else {
                     label
-                        .onTapGesture(count: 2, perform: beginEditing)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -377,6 +376,10 @@ struct TaskRow: View {
         }
         .clipped()
         .contentShape(Rectangle())
+        // Double-clicking anywhere in the row edits it, not only on the
+        // words. Off while editing, so a double-click in the field selects
+        // a word as usual.
+        .gesture(TapGesture(count: 2).onEnded(beginEditing), including: editing ? .none : .all)
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
         #if os(macOS)
