@@ -1,6 +1,6 @@
 # Cookie
 
-A small Mac app for putting checklist items on calendar days. A compact month calendar sits above the selected day's list; type a task, press Return, and it lands on that day.
+A small Mac and iPhone app for putting checklist items on calendar days. A compact month calendar sits above the selected day's list; type a task, press Return, and it lands on that day.
 
 Checking a task off rolls a cookie across the row.
 
@@ -9,7 +9,7 @@ Checking a task off rolls a cookie across the row.
 - **Month calendar.** Days with unfinished tasks get a dot: filled red once the day has passed, hollow for days still ahead. Collapse the calendar with the chevron beside the month (⌘⇧C), or drag the handle under it to resize.
 - **Quick entry.** The field under the calendar always adds to the selected day and keeps focus, so you can type several tasks in a row.
 - **Earlier section.** When today is selected, unfinished tasks from past days appear above today's list. They keep their original date; nothing rolls over on its own.
-- **Drag to reschedule.** Drag a task within the list to reorder it. To move it to another day, rest it on that day in the calendar: the list switches to that day, and you can drop the task where it belongs, or release it on the calendar day directly.
+- **Drag to reschedule.** Drag a task within the list to reorder it. To move it to another day, rest it on that day in the calendar: the list switches to that day, and you can drop the task where it belongs, or release it on the calendar day directly. On the iPhone, press and hold a task to lift it first.
 - **Editing.** Double-click a task, or right-click and choose Edit. Return saves, Escape cancels.
 - **Completed section.** Finished tasks move to a collapsible section for their day, in the order you completed them.
 - **Undo.** ⌘Z restores a deleted task or reverts an edit.
@@ -45,6 +45,8 @@ This builds a Release version, replaces `/Applications/Cookie.app`, and opens it
 2. Open `Cookie.xcodeproj`, select the **Cookie** target, and choose your team under **Signing & Capabilities**. The iCloud capability should list the container `iCloud.com.psachdeva.cookie`; if it shows in red, click the refresh button to register it.
 
 You can also build and run from Xcode itself.
+
+**iPhone.** Open `Cookie.xcodeproj`, choose the **Cookie iOS** scheme and a simulator or your iPhone, and run. Without iCloud (a free Personal Team, or the simulator) the iPhone keeps its own local tasks. `scripts/make-ios-assets.sh` regenerates the iPhone icon and cookie image from `Assets/AppIcon.svg`.
 
 **Unsigned, local only.** A quick build with Swift Package Manager that doesn't need a developer account. iCloud sync stays off:
 
@@ -93,15 +95,17 @@ Sync only runs in the signed build. Changes made in an unsigned build are upload
 ```
 Sources/CookieCore/   Task model, merging, calendar-day math, the task store, and saving
 Sources/CookieSync/   iCloud sync with CloudKit
-Sources/CookieApp/    The SwiftUI app: window, calendar, day list, dragging
+Sources/CookieUI/     Shared SwiftUI: calendar, day list, entry, dragging, and app setup
+Sources/CookieApp/    The Mac app: window, menu bar panel, settings
+Sources/CookieiOS/    The iPhone app
 Tests/                Tests for the core model and the CloudKit record mapping
-Cookie.xcodeproj      The signed app target, built from Sources/CookieApp
-App/                  Info.plist and entitlements for the signed app
-Assets/               App icon (AppIcon.svg is the source; the .icns is generated)
-scripts/              build-signed.sh, build-app.sh, and make-icon.sh
+Cookie.xcodeproj      Mac and iPhone app targets
+App/                  Mac Info.plist and entitlements; iPhone asset catalog
+Assets/               App icon source (AppIcon.svg) and the generated .icns
+scripts/              Build scripts and icon generators
 ```
 
-`CookieCore` and `CookieSync` have no UI code, so they can back an iPhone version later.
+The Mac and iPhone apps show the same `CookieUI` views; platform differences, like the Mac's title-bar header and mouse dragging or the iPhone's touch dragging, are marked with `#if os(...)`.
 
 ## License
 
