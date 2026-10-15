@@ -58,6 +58,13 @@ public final class DragController {
     #if os(macOS)
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var mouseMonitor: Any?
+    #else
+    /// A touch drag the system has lifted but the finger hasn't moved yet,
+    /// with where the finger was first reported. It becomes the session
+    /// once the finger travels, so a long press that only opens the context
+    /// menu (and never drops anything, so never ends) leaves no dimmed row.
+    @ObservationIgnored private var pendingTouch: Session?
+    @ObservationIgnored private var pendingOrigin: CGPoint?
     #endif
 
     private let navigation: DayNavigation
@@ -111,13 +118,13 @@ public final class DragController {
         return CGPoint(x: point.x, y: window.frame.height - point.y)
     }
     #else
-    /// Starts a touch drag, when the system lifts a row. Positions then
-    /// arrive from `TaskDropDelegate` as the finger moves.
+    /// Readies a touch drag, when the system lifts a row. Positions then
+    /// arrive from `TaskDropDelegate`, and the drag starts once they move.
     func beginTouch(task: TaskItem) {
         // A drag the system cut short (an incoming call, say) never
         // reported its end; clear it.
         reset()
-        session = Session(
+        pendingTouch = Session(
             taskID: task.id,
             text: task.text,
             isCompleted: task.isCompleted,
@@ -127,6 +134,25 @@ public final class DragController {
             location: .zero,
             showsGhost: false
         )
+    }
+
+    /// Whether a lifted row is waiting for the finger to move.
+    var hasPendingTouch: Bool { pendingTouch != nil }
+
+    /// Feeds a touch position; starts the pending drag once the finger has
+    /// moved past a small slop.
+    func updateTouch(location: CGPoint) {
+        if session == nil, let pending = pendingTouch {
+            guard let origin = pendingOrigin else {
+                pendingOrigin = location
+                return
+            }
+            guard hypot(location.x - origin.x, location.y - origin.y) > 6 else { return }
+            session = pending
+            pendingTouch = nil
+            pendingOrigin = nil
+        }
+        update(location: location)
     }
     #endif
 
@@ -269,6 +295,9 @@ public final class DragController {
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         keyMonitor = nil
         mouseMonitor = nil
+        #else
+        pendingTouch = nil
+        pendingOrigin = nil
         #endif
         session = nil
         hoverKey = nil
@@ -298,31 +327,60 @@ struct DragOverlay: View {
     }
 
     private func ghost(_ session: DragController.Session) -> some View {
+        DragCard(text: session.text, isCompleted: session.isCompleted, width: session.width)
+            .offset(
+                x: session.location.x - session.grabOffset.width,
+                y: session.location.y - session.grabOffset.height
+            )
+    }
+}
+
+/// A task as it looks while being dragged: the row's checkbox ring and
+/// text on a lightly tinted card, so it reads as one rectangle picked up
+/// off the list. The Mac draws it as the drag ghost; the iPhone hands it
+/// to the system as the drag preview.
+struct DragCard: View {
+    let text: String
+    let isCompleted: Bool
+    let width: CGFloat
+    /// Off on the iPhone, where the system draws its own shadow under the
+    /// preview.
+    var shadow = true
+
+    private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+    #if os(macOS)
+    private static let base = Color(nsColor: .windowBackgroundColor)
+    #else
+    private static let base = Color(uiColor: .systemBackground)
+    #endif
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Circle()
                 .strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1.5)
-                .frame(width: 18, height: 18)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-            Text(session.text)
-                .font(.body)
-                .strikethrough(session.isCompleted)
-                .foregroundStyle(session.isCompleted ? .secondary : .primary)
+                .frame(width: CheckCircle.ringSize, height: CheckCircle.ringSize)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + CheckCircle.baselineOffset }
+            Text(text)
+                .font(TaskRow.rowFont)
+                .strikethrough(isCompleted)
+                .foregroundStyle(isCompleted ? .secondary : .primary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .frame(width: session.width)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.background)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-        )
-        .opacity(0.95)
-        .offset(
-            x: session.location.x - session.grabOffset.width,
-            y: session.location.y - session.grabOffset.height
-        )
+        .padding(.vertical, TaskRow.rowPadding)
+        .frame(width: width)
+        .background {
+            // Opaque base so the list doesn't show through, then the same
+            // tint as a hovered row, a shade stronger. A system color, not
+            // the background style: the iPhone renders the preview outside
+            // the view tree, where that style resolves to clear.
+            Self.shape.fill(Self.base)
+                .overlay(Self.shape.fill(Color.primary.opacity(0.07)))
+                .overlay(Self.shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+                .shadow(color: .black.opacity(shadow ? 0.22 : 0), radius: 10, y: 4)
+        }
+        .contentShape(.dragPreview, Self.shape)
     }
 }
 
@@ -335,18 +393,18 @@ struct TaskDropDelegate: DropDelegate {
     let drag: DragController
 
     func validateDrop(info: DropInfo) -> Bool {
-        drag.isDragging
+        drag.isDragging || drag.hasPendingTouch
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        drag.update(location: info.location)
+        drag.updateTouch(location: info.location)
         // Always accept, even over places that aren't targets, so the
         // release always arrives in `performDrop` and ends the session.
         return DropProposal(operation: .move)
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        drag.update(location: info.location)
+        drag.updateTouch(location: info.location)
         let moved = drag.target != .none
         drag.end()
         return moved

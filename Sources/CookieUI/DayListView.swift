@@ -415,6 +415,8 @@ struct TaskRow: View {
         .onDrag {
             drag.beginTouch(task: task)
             return NSItemProvider(object: task.id.uuidString as NSString)
+        } preview: {
+            DragCard(text: task.text, isCompleted: task.isCompleted, width: frame.width, shadow: false)
         }
         #endif
         .contextMenu {
