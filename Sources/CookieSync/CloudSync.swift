@@ -1,6 +1,11 @@
 import CloudKit
 import CookieCore
+import OSLog
 import Security
+
+/// Sync diagnostics. Follow with:
+/// `log stream --predicate 'subsystem == "com.psachdeva.cookie"' --info`
+private let log = Logger(subsystem: "com.psachdeva.cookie", category: "sync")
 
 /// Keeps the task store in step with the user's private iCloud database
 /// through `CKSyncEngine`. The local task file stays the source the app
@@ -19,6 +24,7 @@ public final class CloudSync: CKSyncEngineDelegate {
     private let flushTasks: () -> Void
     private var state: SyncState
     private var engine: CKSyncEngine?
+    private var pendingSend: Task<Void, Never>?
 
     public init(store: TaskStore, stateURL: URL, flushTasks: @escaping () -> Void) {
         self.store = store
@@ -62,6 +68,10 @@ public final class CloudSync: CKSyncEngineDelegate {
             engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: TaskRecord.zoneID))])
         }
         queueUnsyncedChanges()
+        log.notice("started; firstRun=\(firstRun) pendingRecords=\(engine.state.pendingRecordZoneChanges.count) pendingDatabase=\(engine.state.pendingDatabaseChanges.count)")
+        // The engine's own scheduler can wait minutes; the spec wants
+        // changes across within seconds, so send right away.
+        scheduleSend(after: 0)
     }
 
     /// Queues local changes for upload. Called for every local store change.
@@ -71,12 +81,40 @@ public final class CloudSync: CKSyncEngineDelegate {
             let recordID = TaskRecord.recordID(for: id)
             return store.task(id) != nil ? .saveRecord(recordID) : .deleteRecord(recordID)
         })
+        // Short debounce so a burst of edits goes up as one batch.
+        scheduleSend(after: 0.5)
+    }
+
+    /// Sends pending changes after `delay`, replacing any send already
+    /// waiting. The engine retries on its own if the send fails.
+    private func scheduleSend(after delay: TimeInterval) {
+        pendingSend?.cancel()
+        pendingSend = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+            }
+            guard let engine = self?.engine else { return }
+            do {
+                try await engine.sendChanges()
+            } catch {
+                log.error("sendChanges failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// Asks the server for changes now, rather than waiting for a push.
     public func fetchChanges() {
         guard let engine else { return }
-        Task { try? await engine.fetchChanges() }
+        Task {
+            do {
+                try await engine.fetchChanges()
+            } catch {
+                log.error("fetchChanges failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        // Anything queued while the app was in the background goes now too.
+        scheduleSend(after: 0)
     }
 
     /// Compares the store against what the server is known to have, and
@@ -122,6 +160,7 @@ public final class CloudSync: CKSyncEngineDelegate {
             saveState()
 
         case .accountChange(let change):
+            log.notice("account change: \(String(describing: change.changeType), privacy: .public)")
             switch change.changeType {
             case .signIn:
                 // Upload everything to the new account.
@@ -149,6 +188,7 @@ public final class CloudSync: CKSyncEngineDelegate {
             }
 
         case .fetchedRecordZoneChanges(let changes):
+            log.notice("fetched \(changes.modifications.count) modified, \(changes.deletions.count) deleted")
             var incoming: [TaskItem] = []
             for modification in changes.modifications {
                 let record = modification.record
@@ -163,7 +203,14 @@ public final class CloudSync: CKSyncEngineDelegate {
             flushTasks()
             saveState()
 
+        case .sentDatabaseChanges(let sent):
+            log.notice("sent database changes: \(sent.savedZones.count) zones saved, \(sent.failedZoneSaves.count) failed")
+            for failure in sent.failedZoneSaves {
+                log.error("zone save failed: \(failure.error.localizedDescription, privacy: .public)")
+            }
+
         case .sentRecordZoneChanges(let sent):
+            log.notice("sent: \(sent.savedRecords.count) saved, \(sent.deletedRecordIDs.count) deleted, \(sent.failedRecordSaves.count) failed saves, \(sent.failedRecordDeletes.count) failed deletes")
             for record in sent.savedRecords {
                 if let item = TaskRecord.item(from: record) { remember(record, as: item) }
             }
@@ -207,7 +254,7 @@ public final class CloudSync: CKSyncEngineDelegate {
             default:
                 // Network, throttling, and account errors are retried by the
                 // engine on its own schedule.
-                break
+                log.error("save failed (\(failure.error.code.rawValue)): \(failure.error.localizedDescription, privacy: .public)")
             }
         }
         if needsZone {
