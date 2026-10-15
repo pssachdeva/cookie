@@ -46,7 +46,7 @@ This builds a Release version, replaces `/Applications/Cookie.app`, and opens it
 
 You can also build and run from Xcode itself.
 
-**iPhone.** Open `Cookie.xcodeproj`, choose the **Cookie iOS** scheme and a simulator or your iPhone, and run. Without iCloud (a free Personal Team, or the simulator) the iPhone keeps its own local tasks. `scripts/make-ios-assets.sh` regenerates the iPhone icon and cookie image from `Assets/AppIcon.svg`.
+**iPhone.** Open `Cookie.xcodeproj`, choose the **Cookie iOS** scheme and a simulator or your iPhone, and run. Both targets sign with `App/Cookie.entitlements`, so a paid team's build syncs with the Mac; in the simulator the iPhone keeps its own local tasks. `scripts/make-ios-assets.sh` regenerates the iPhone icon and cookie image from `Assets/AppIcon.svg`.
 
 **Unsigned, local only.** A quick build with Swift Package Manager that doesn't need a developer account. iCloud sync stays off:
 
