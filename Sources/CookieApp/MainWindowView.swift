@@ -7,17 +7,28 @@ import CookieUI
 /// lights.
 struct MainWindowView: View {
     let store: TaskStore
+    /// Right edge of the traffic lights in the window, measured once the
+    /// window exists; their size varies between macOS versions.
+    @State private var trafficLightsMaxX: CGFloat = 68
 
     var body: some View {
         DayPlannerView(store: store)
-            .environment(\.calendarHeaderMetrics, CalendarHeaderMetrics(height: 28, leadingInset: 58))
+            .environment(\.calendarHeaderMetrics, CalendarHeaderMetrics(height: 28, leadingInset: headerInset))
             .frame(minWidth: Self.minSize.width, idealWidth: 360, minHeight: Self.minSize.height, idealHeight: 680)
             .background(WindowSizeLimits(min: Self.minSize, max: Self.maxSize, initial: Self.defaultSize))
+            .background(TrafficLightsReader(maxX: $trafficLightsMaxX))
             // Content starts at the window's top edge; the calendar header
             // shares the title bar's row with the traffic lights. Last in the
             // chain so clipping inside the planner covers the full window,
             // not only the area below the title bar.
             .ignoresSafeArea(.container, edges: .top)
+    }
+
+    /// Clears the traffic lights by a title bar's usual gap. The inset is
+    /// measured from the calendar's 10 pt edge, and the title button pads
+    /// its label by another 6 pt.
+    private var headerInset: CGFloat {
+        max(0, trafficLightsMaxX + 14 - 10 - 6)
     }
 
     static let minSize = CGSize(width: 320, height: 560)
@@ -72,6 +83,39 @@ struct WindowSizeLimits: NSViewRepresentable {
             if UserDefaults.standard.string(forKey: "NSWindow Frame \(window.identifier?.rawValue ?? "main")") == nil {
                 window.setContentSize(initial)
             }
+        }
+    }
+}
+
+/// Reports where the window's traffic lights end, so the calendar header in
+/// the title bar row can sit clear of them.
+struct TrafficLightsReader: NSViewRepresentable {
+    @Binding var maxX: CGFloat
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onMeasure = { x in if x != maxX { maxX = x } }
+        return view
+    }
+
+    func updateNSView(_ view: ReaderView, context: Context) {
+        view.onMeasure = { x in if x != maxX { maxX = x } }
+    }
+
+    final class ReaderView: NSView {
+        var onMeasure: (CGFloat) -> Void = { _ in }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Deferred until the title bar has laid out its buttons.
+            DispatchQueue.main.async { [weak self] in self?.measure() }
+        }
+
+        private func measure() {
+            guard let window, let zoom = window.standardWindowButton(.zoomButton),
+                  let superview = zoom.superview else { return }
+            let frame = superview.convert(zoom.frame, to: nil)
+            onMeasure(frame.maxX)
         }
     }
 }
