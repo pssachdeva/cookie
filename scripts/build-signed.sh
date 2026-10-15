@@ -37,6 +37,7 @@ if ! xcodebuild \
   -configuration "$config" \
   -derivedDataPath "$derived" \
   -allowProvisioningUpdates \
+  -allowProvisioningDeviceRegistration \
   "${team_setting[@]}" \
   build >"$log" 2>&1
 then
@@ -52,9 +53,16 @@ echo "built $app ($config)"
 
 if (( install )); then
   osascript -e 'tell application id "com.psachdeva.cookie" to quit' 2>/dev/null || true
-  while pgrep -x Cookie >/dev/null; do sleep 0.2; done
+  # Wait on the Mac app by bundle ID: the iPhone app running in the
+  # Simulator is also a process named Cookie.
+  while [[ "$(osascript -e 'application id "com.psachdeva.cookie" is running' 2>/dev/null)" == "true" ]]; do sleep 0.2; done
   rm -rf /Applications/Cookie.app
   ditto "$app" /Applications/Cookie.app
-  open /Applications/Cookie.app
+  # Launch Services can refuse (-600) for a moment after the old copy
+  # quits; retry briefly.
+  for _ in 1 2 3 4 5; do
+    open /Applications/Cookie.app 2>/dev/null && break
+    sleep 1
+  done
   echo "installed /Applications/Cookie.app"
 fi
