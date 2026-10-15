@@ -11,8 +11,6 @@ struct CalendarView: View {
     // @State mirror and the stored value is written alongside it.
     @AppStorage("calendarCollapsed") private var storedCollapsed = false
     @State private var collapsed = false
-    /// Natural height of the weekday row plus grid; nil until measured.
-    @State private var expandedHeight: CGFloat?
     @Namespace private var selectionNamespace
     let navigation: DayNavigation
 
@@ -25,34 +23,35 @@ struct CalendarView: View {
             // handle and the gap under the header, so collapsing leaves only
             // the header row on the calendar surface.
             VStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    weekdayRow
-                    MonthGridView(
-                        month: navigation.displayedMonth,
-                        selected: navigation.selectedDay,
-                        today: navigation.today,
-                        unfinished: store.daysWithUnfinished(in: navigation.displayedMonth),
-                        selectionNamespace: selectionNamespace,
-                        onSelect: { day in withAnimation(.smooth(duration: 0.3)) { navigation.select(day) } }
+                #if os(iOS)
+                // Swipe the grid sideways to change months. The gesture
+                // needs clear horizontal travel, so taps on days are
+                // untouched, and it sits on the container so it survives
+                // the grid being replaced by the month transition.
+                monthArea
+                    .gesture(
+                        DragGesture(minimumDistance: 24)
+                            .onEnded { value in
+                                let dx = value.translation.width
+                                let dy = value.translation.height
+                                guard abs(dx) > 50, abs(dx) > abs(dy) * 1.5 else { return }
+                                shift(by: dx < 0 ? 1 : -1)
+                            }
                     )
-                    .id(navigation.displayedMonth)
-                    .transition(monthTransition)
-                    .clipped()
-                    .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: navigation.displayedMonth)
-                }
+                    .padding(.bottom, 8)
+                #else
+                monthArea
                 CalendarSizeHandle()
                     .padding(.top, 2)
+                #endif
             }
             .padding(.top, 10)
             // Fold as a drawer: the container's height animates to zero and
             // clips the grid, which is anchored at the bottom, so it slides up
             // and tucks under the header's lower edge rather than passing
-            // through it. The natural height is measured while expanded.
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
-                if height > 0 { expandedHeight = height }
-            }
-            .frame(height: collapsed ? 0 : expandedHeight, alignment: .bottom)
-            .clipped()
+            // through it. A layout rather than a measured frame, so resizing
+            // the rows doesn't lag a frame behind and jitter.
+            .modifier(DrawerFold(openFraction: collapsed ? 0 : 1))
             .opacity(collapsed ? 0 : 1)
             .allowsHitTesting(!collapsed)
             .accessibilityHidden(collapsed)
@@ -60,6 +59,25 @@ struct CalendarView: View {
         .onAppear { collapsed = storedCollapsed }
         // Hidden cells must stop being drop targets.
         .onChange(of: collapsed) { _, isCollapsed in if isCollapsed { drag.cellFrames = [:] } }
+    }
+
+    /// Weekday letters and the month grid, with the month slide.
+    private var monthArea: some View {
+        VStack(spacing: 6) {
+            weekdayRow
+            MonthGridView(
+                month: navigation.displayedMonth,
+                selected: navigation.selectedDay,
+                today: navigation.today,
+                unfinished: store.daysWithUnfinished(in: navigation.displayedMonth),
+                selectionNamespace: selectionNamespace,
+                onSelect: { day in withAnimation(.smooth(duration: 0.3)) { navigation.select(day) } }
+            )
+            .id(navigation.displayedMonth)
+            .transition(monthTransition)
+            .clipped()
+            .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: navigation.displayedMonth)
+        }
     }
 
     private var header: some View {
@@ -163,7 +181,13 @@ struct CalendarView: View {
 
 struct MonthGridView: View {
     @Environment(DragController.self) private var drag
+    #if os(iOS)
+    /// Fixed on the iPhone (no resize handle); tall enough to be a
+    /// comfortable touch target.
+    private let rowHeight: Double = 44
+    #else
     @AppStorage(CalendarSizeHandle.key) private var rowHeight = CalendarSizeHandle.defaultRowHeight
+    #endif
     let month: CalendarMonth
     let selected: CalendarDay
     let today: CalendarDay
@@ -291,6 +315,42 @@ struct DayMark: Shape {
     }
 }
 
+/// Shows a fraction of its content's natural height, keeping the bottom
+/// edge, so animating the fraction folds the content up like a drawer.
+private struct DrawerFold: ViewModifier {
+    let openFraction: CGFloat
+
+    func body(content: Content) -> some View {
+        DrawerLayout(openFraction: openFraction) { content }
+            .clipped()
+    }
+}
+
+private struct DrawerLayout: Layout {
+    var openFraction: CGFloat
+
+    var animatableData: CGFloat {
+        get { openFraction }
+        set { openFraction = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let content = subviews.first else { return .zero }
+        let natural = content.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: natural.width, height: natural.height * openFraction)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let natural = content.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        content.place(
+            at: CGPoint(x: bounds.minX, y: bounds.maxY),
+            anchor: .bottomLeading,
+            proposal: ProposedViewSize(width: bounds.width, height: natural.height)
+        )
+    }
+}
+
 /// Grabber at the bottom of the calendar. Dragging it changes the
 /// calendar's row height (persisted); double-clicking resets it. It folds
 /// away with the grid when the calendar is collapsed.
@@ -298,6 +358,9 @@ struct CalendarSizeHandle: View {
     static let key = "calendarRowHeight"
     static let defaultRowHeight: Double = 34
     static let range: ClosedRange<Double> = 24...56
+    /// How far either side of the default, per row, the drag sticks to it:
+    /// 3 pt per row, about 18 pt of pointer travel.
+    static let snapZone: Double = 3
 
     @AppStorage(Self.key) private var rowHeight = Self.defaultRowHeight
     @State private var startHeight: Double?
@@ -310,19 +373,35 @@ struct CalendarSizeHandle: View {
             .frame(maxWidth: .infinity)
             .frame(height: 14)
             .contentShape(Rectangle())
-            .onHover { inside in
-                hovering = inside
-                #if os(macOS)
-                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-                #endif
-            }
+            .onHover { hovering = $0 }
+            #if os(macOS)
+            // Managed by the system, so it holds steady when the handle
+            // slips out from under the pointer mid-drag.
+            .pointerStyle(.rowResize)
+            #endif
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Measured in the window, not on the handle: the handle
+                // moves as the calendar grows, and measuring against it fed
+                // each resize back into the drag.
+                DragGesture(minimumDistance: 1, coordinateSpace: .named(windowSpace))
                     .onChanged { value in
                         if startHeight == nil { startHeight = rowHeight }
-                        // Six rows share the drag distance.
-                        let proposed = (startHeight ?? rowHeight) + value.translation.height / 6
-                        rowHeight = min(Self.range.upperBound, max(Self.range.lowerBound, proposed))
+                        // Six rows share the drag distance. Whole points, so
+                        // sub-point mouse motion doesn't relayout the window.
+                        let proposed = ((startHeight ?? rowHeight) + value.translation.height / 6).rounded()
+                        var clamped = min(Self.range.upperBound, max(Self.range.lowerBound, proposed))
+                        // The default size is a detent: the drag sticks to
+                        // it for a few points either way, then moves on.
+                        if abs(clamped - Self.defaultRowHeight) <= Self.snapZone {
+                            clamped = Self.defaultRowHeight
+                        }
+                        guard clamped != rowHeight else { return }
+                        #if os(macOS)
+                        if clamped == Self.defaultRowHeight {
+                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                        }
+                        #endif
+                        rowHeight = clamped
                     }
                     .onEnded { _ in startHeight = nil }
             )
