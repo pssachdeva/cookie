@@ -171,6 +171,10 @@ public struct DayListView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.cookieAccent.opacity(0.14)))
+                    // Centered on the title's capitals rather than sharing
+                    // its baseline, where the pill's padding hung below the
+                    // line and it sat low.
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + Self.titleCapHeight / 2 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,6 +186,15 @@ public struct DayListView: View {
             Divider().opacity(scrolled ? 1 : 0)
         }
         .animation(.easeOut(duration: 0.15), value: scrolled)
+    }
+
+    /// Cap height of the day title's font, at the current text size.
+    private static var titleCapHeight: CGFloat {
+        #if os(macOS)
+        NSFont.preferredFont(forTextStyle: .title3).capHeight
+        #else
+        UIFont.preferredFont(forTextStyle: .title3).capHeight
+        #endif
     }
 
     private func completedSection(_ completed: [TaskItem]) -> some View {
@@ -328,6 +341,14 @@ struct TaskRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(iOS)
+            // Double-tap edits, on the text column only: on touch, a
+            // double-tap gesture makes every single tap beneath it wait to
+            // see whether a second follows, so over the whole row it would
+            // hold up the checkbox.
+            .contentShape(Rectangle())
+            .gesture(TapGesture(count: 2).onEnded(beginEditing), including: editing ? .subviews : .all)
+            #endif
 
             if showsDate {
                 // Every Earlier row is past due; the red matches the
@@ -363,7 +384,7 @@ struct TaskRow: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 7)
+        .padding(.vertical, Self.rowPadding)
         // Hover highlight, inset from the window edges. Off during drags and
         // the completion roll, where it would flicker under the pointer.
         .background {
@@ -376,10 +397,12 @@ struct TaskRow: View {
         }
         .clipped()
         .contentShape(Rectangle())
+        #if os(macOS)
         // Double-clicking anywhere in the row edits it, not only on the
         // words. Off while editing, so a double-click in the field selects
         // a word as usual.
         .gesture(TapGesture(count: 2).onEnded(beginEditing), including: editing ? .none : .all)
+        #endif
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
         #if os(macOS)
@@ -428,7 +451,7 @@ struct TaskRow: View {
     private var editor: some View {
         TextField("Task", text: $editText, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.body)
+            .font(Self.rowFont)
             .focused($editFocused)
             .onSubmit(commitEdit)
             #if os(macOS)
@@ -470,7 +493,7 @@ struct TaskRow: View {
     /// strikethrough sweeps left to right (and per line for wrapped text).
     private var label: some View {
         let base = Text(task.text)
-            .font(.body)
+            .font(Self.rowFont)
             .fixedSize(horizontal: false, vertical: true)
         return ZStack(alignment: .leading) {
             base.foregroundStyle(checked ? .secondary : .primary)
@@ -481,6 +504,20 @@ struct TaskRow: View {
                 }
         }
     }
+
+    #if os(macOS)
+    static let rowPadding: CGFloat = 7
+    #else
+    static let rowPadding: CGFloat = 11
+    #endif
+
+    /// Task text. A step up from body on the iPhone, where rows are read
+    /// at arm's length; still scales with Dynamic Type.
+    #if os(macOS)
+    static let rowFont = Font.body
+    #else
+    static let rowFont = Font.title3
+    #endif
 
     private func toggle() {
         guard !completing else { return }
@@ -497,17 +534,45 @@ struct TaskRow: View {
             return
         }
         // 1. The circle fills with the cookie.
-        withAnimation(.spring(duration: 0.3, bounce: 0.35)) { checked = true }
+        withAnimation(.spring(duration: 0.18, bounce: 0.45)) { checked = true }
         // 2. The cookie rolls off to the right, sweeping the strikethrough
         //    behind it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             rolling = true
             withAnimation(.easeIn(duration: 0.6)) { roll = 1 }
         }
-        // 3. The row clears.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeOut(duration: 0.3)) { store.setCompleted(task.id, true) }
+        // 3. The row clears, together with any others checked off in quick
+        //    succession.
+        CompletionBatch.complete(task.id, in: store, after: 0.95)
+    }
+}
+
+/// Holds completed rows in place while several are checked off in a row,
+/// then clears them together. Clearing each one as its own roll finished
+/// moved the rows below mid-tap, so the next check could miss or land on
+/// the wrong task.
+@MainActor
+enum CompletionBatch {
+    /// Each task with the moment it was checked, so the Completed section
+    /// keeps the order they were checked off in.
+    private static var pending: [(id: UUID, at: Date)] = []
+    private static var flush: DispatchWorkItem?
+
+    /// Marks `id` completed once `delay` has passed with no further check;
+    /// each new check restarts the wait for the whole batch.
+    static func complete(_ id: UUID, in store: TaskStore, after delay: TimeInterval) {
+        pending.append((id, .now))
+        flush?.cancel()
+        let work = DispatchWorkItem {
+            let batch = pending
+            pending = []
+            flush = nil
+            withAnimation(.easeOut(duration: 0.3)) {
+                for item in batch { store.setCompleted(item.id, true, at: item.at) }
+            }
         }
+        flush = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 }
 
@@ -551,9 +616,18 @@ struct CheckCircle: View {
     var cookieHidden = false
     let action: () -> Void
 
+    #if os(macOS)
     static let ringSize: CGFloat = 18
     /// Larger than the ring so the cookie covers it completely.
     static let cookieSize: CGFloat = 22
+    /// Lowers the ring's center from the first line's baseline to the
+    /// middle of its lowercase letters.
+    static let baselineOffset: CGFloat = 5
+    #else
+    static let ringSize: CGFloat = 22
+    static let cookieSize: CGFloat = 27
+    static let baselineOffset: CGFloat = 7
+    #endif
     /// Hit area beyond the ring: a fingertip needs far more than a pointer.
     #if os(macOS)
     static let touchSlop: CGFloat = 2
@@ -562,35 +636,96 @@ struct CheckCircle: View {
     #endif
 
     @State private var hovering = false
+    /// True while the pointer is down. Gesture state, so SwiftUI resets it
+    /// even when the press is cancelled (say, by a scroll) rather than
+    /// ended; a plain flag cleared in onEnded could stick and swallow every
+    /// later click.
+    @GestureState private var pointerDown = false
+    /// Whether this press has already fired, so it fires once.
+    @State private var fired = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                // Warms to the accent on hover to show it is the click target.
-                Circle()
-                    .strokeBorder(
-                        hovering && !checked ? Color.cookieAccent : Color.secondary.opacity(0.6),
-                        lineWidth: 1.5
-                    )
-                    .frame(width: Self.ringSize, height: Self.ringSize)
+        #if os(macOS)
+        // Fires on mouse-down rather than release, so the cookie lands the
+        // instant the click does.
+        content
+            .gesture(DragGesture(minimumDistance: 0)
+                .updating($pointerDown) { _, down, _ in down = true }
+                .onChanged { _ in
+                    guard !fired else { return }
+                    fired = true
+                    action()
+                }
+                .onEnded { _ in fired = false })
+            // A cancelled press never reaches onEnded; the reset of the
+            // gesture state catches it instead.
+            .onChange(of: pointerDown) { _, down in
+                if !down { fired = false }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
+            .padding(-Self.touchSlop)
+            .onHover { inside in
+                withAnimation(.easeOut(duration: 0.12)) { hovering = inside }
+            }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + Self.baselineOffset }
+        #else
+        // A plain button on touch, where firing on touch-down would also
+        // fire when a scroll starts on the checkbox.
+        Button(action: action) { content }
+            .buttonStyle(CheckPressStyle())
+            // A light tap as the cookie lands, so the check registers in
+            // the hand as well as on screen.
+            .sensoryFeedback(.impact(weight: .light), trigger: checked) { _, now in now }
+            .padding(-Self.touchSlop)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + Self.baselineOffset }
+        #endif
+    }
+
+    private var content: some View {
+        ZStack {
+            // Warms to the accent on hover to show it is the click target.
+            Circle()
+                .strokeBorder(
+                    hovering && !checked ? Color.cookieAccent : Color.secondary.opacity(0.6),
+                    lineWidth: 1.5
+                )
+                .frame(width: Self.ringSize, height: Self.ringSize)
+            // Inserted at full strength and only scaled in, so the cookie
+            // is solid on the first frame; fading it in read as lag.
+            if checked && !cookieHidden {
                 CookieGlyph()
                     .frame(width: Self.cookieSize, height: Self.cookieSize)
-                    .scaleEffect(checked && !cookieHidden ? 1 : 0.3)
-                    .opacity(checked && !cookieHidden ? 1 : 0)
+                    .transition(.scale(scale: 0.7))
             }
-            .frame(width: Self.ringSize, height: Self.ringSize)
-            .padding(Self.touchSlop)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        // The extra hit area around the ring doesn't take up layout space.
-        .padding(-Self.touchSlop)
-        .onHover { inside in
-            withAnimation(.easeOut(duration: 0.12)) { hovering = inside }
-        }
-        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+        .frame(width: Self.ringSize, height: Self.ringSize)
+        // The extra hit area around the ring doesn't take up layout
+        // space; the caller pads it back by -touchSlop.
+        .padding(Self.touchSlop)
+        .contentShape(Rectangle())
     }
 }
+
+#if os(iOS)
+/// Shows the press the moment the finger lands: the ring warms to the
+/// accent and dips slightly. The action itself waits for the lift, so a
+/// scroll that starts on the checkbox doesn't complete the task.
+private struct CheckPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.cookieAccent, lineWidth: 1.5)
+                    .frame(width: CheckCircle.ringSize, height: CheckCircle.ringSize)
+                    .opacity(configuration.isPressed ? 1 : 0)
+            }
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+    }
+}
+#endif
 
 /// The app's cookie. On the Mac, drawn from the bundled SVG (the same source
 /// as the Dock icon), with the Dock icon as a fallback when running outside
