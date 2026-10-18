@@ -121,6 +121,11 @@ public final class DragController {
     /// Readies a touch drag, when the system lifts a row. Positions then
     /// arrive from `TaskDropDelegate`, and the drag starts once they move.
     func beginTouch(task: TaskItem) {
+        // The system asks for the dragged item again during the drag (the
+        // log showed several requests per drag). Those must leave the drag
+        // alone: resetting here cancelled the dwell that switches days, so
+        // a task could never reach another day.
+        if session?.taskID == task.id || pendingTouch?.taskID == task.id { return }
         // A drag the system cut short (an incoming call, say) never
         // reported its end; clear it.
         reset()
