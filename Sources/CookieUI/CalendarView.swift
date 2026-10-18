@@ -56,6 +56,7 @@ struct CalendarView: View {
             .allowsHitTesting(!collapsed)
             .accessibilityHidden(collapsed)
         }
+        .reportFrame { drag.calendarFrame = $0 }
         .onAppear { collapsed = storedCollapsed }
         // Hidden cells must stop being drop targets.
         .onChange(of: collapsed) { _, isCollapsed in if isCollapsed { drag.cellFrames = [:] } }

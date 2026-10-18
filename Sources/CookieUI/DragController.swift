@@ -28,12 +28,16 @@ public final class DragController {
         let sourceDay: CalendarDay
         /// Pointer offset from the row's top-left at grab time, so the ghost
         /// stays under the pointer where it was picked up.
-        let grabOffset: CGSize
-        let width: CGFloat
+        var grabOffset: CGSize
+        var width: CGFloat
         var location: CGPoint
-        /// Touch drags use the system's own lifted preview, so the overlay
-        /// draws no ghost for them.
-        var showsGhost = true
+        /// Fixed left edge for the card, when it should only follow the
+        /// pointer up and down: touch rows span the screen, so sliding
+        /// sideways would just push the card off the edge.
+        var cardX: CGFloat? = nil
+        /// How far the cookie has rolled, in points of travel: right and
+        /// down add, left and up take away.
+        var roll: CGFloat = 0
     }
 
     static let cellDwell: TimeInterval = 0.35
@@ -50,6 +54,8 @@ public final class DragController {
     var listFrame: CGRect = .zero
     var previousMonthFrame: CGRect = .zero
     var nextMonthFrame: CGRect = .zero
+    /// The whole calendar, where the dragged card turns into a cookie.
+    var calendarFrame: CGRect = .zero
 
     // Hover state.
     private(set) var hoverKey: AnyHashable?
@@ -65,6 +71,7 @@ public final class DragController {
     /// menu (and never drops anything, so never ends) leaves no dimmed row.
     @ObservationIgnored private var pendingTouch: Session?
     @ObservationIgnored private var pendingOrigin: CGPoint?
+    @ObservationIgnored private var pendingRowFrame: CGRect = .zero
     #endif
 
     private let navigation: DayNavigation
@@ -76,6 +83,13 @@ public final class DragController {
     }
 
     var isDragging: Bool { session != nil }
+
+    /// Whether the drag is over the calendar, where it's carried as a
+    /// cookie rather than a card.
+    var isOverCalendar: Bool {
+        guard let session else { return false }
+        return calendarFrame.contains(session.location)
+    }
 
     // MARK: Session
 
@@ -120,7 +134,7 @@ public final class DragController {
     #else
     /// Readies a touch drag, when the system lifts a row. Positions then
     /// arrive from `TaskDropDelegate`, and the drag starts once they move.
-    func beginTouch(task: TaskItem) {
+    func beginTouch(task: TaskItem, rowFrame: CGRect) {
         // The system asks for the dragged item again during the drag (the
         // log showed several requests per drag). Those must leave the drag
         // alone: resetting here cancelled the dwell that switches days, so
@@ -135,10 +149,11 @@ public final class DragController {
             isCompleted: task.isCompleted,
             sourceDay: task.day,
             grabOffset: .zero,
-            width: 0,
+            width: rowFrame.width,
             location: .zero,
-            showsGhost: false
+            cardX: rowFrame.minX
         )
+        pendingRowFrame = rowFrame
     }
 
     /// Whether a lifted row is waiting for the finger to move.
@@ -147,12 +162,17 @@ public final class DragController {
     /// Feeds a touch position; starts the pending drag once the finger has
     /// moved past a small slop.
     func updateTouch(location: CGPoint) {
-        if session == nil, let pending = pendingTouch {
+        if session == nil, var pending = pendingTouch {
             guard let origin = pendingOrigin else {
                 pendingOrigin = location
                 return
             }
             guard hypot(location.x - origin.x, location.y - origin.y) > 6 else { return }
+            // Hold the card centered on the finger vertically. The first
+            // position arrives only once the drag is under way, often far
+            // from the row (even over the calendar), so it can't give the
+            // true grab point.
+            pending.grabOffset = CGSize(width: 0, height: pendingRowFrame.height / 2)
             session = pending
             pendingTouch = nil
             pendingOrigin = nil
@@ -162,7 +182,12 @@ public final class DragController {
     #endif
 
     func update(location: CGPoint) {
-        guard session != nil else { return }
+        guard let old = session?.location else { return }
+        // A touch session starts at .zero before its first position.
+        if old != .zero {
+            let dx = location.x - old.x, dy = location.y - old.y
+            session?.roll += abs(dx) >= abs(dy) ? dx : dy
+        }
         session?.location = location
         updateHover(at: location)
     }
@@ -324,33 +349,57 @@ struct DragOverlay: View {
                         .offset(x: drag.listFrame.minX + 16, y: y - 1)
                         .transition(.opacity)
                 }
-                if session.showsGhost { ghost(session) }
+                ghost(session)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .allowsHitTesting(false)
     }
 
+    /// The dragged task: a card over the list that folds into a big
+    /// cookie over the calendar, and back again on the way down.
     private func ghost(_ session: DragController.Session) -> some View {
-        DragCard(text: session.text, isCompleted: session.isCompleted, width: session.width)
-            .offset(
-                x: session.location.x - session.grabOffset.width,
-                y: session.location.y - session.grabOffset.height
-            )
+        let overCalendar = drag.isOverCalendar
+        let width = max(session.width, 1)
+        let cardX = session.cardX ?? session.location.x - session.grabOffset.width
+        // Shrink toward the pointer.
+        let anchor = UnitPoint(
+            x: min(max((session.location.x - cardX) / width, 0), 1),
+            y: session.grabOffset.height / max(Self.cardHeight, 1)
+        )
+        return ZStack(alignment: .topLeading) {
+            DragCard(text: session.text, isCompleted: session.isCompleted, width: session.width)
+                .scaleEffect(overCalendar ? 0.15 : 1, anchor: anchor)
+                .opacity(overCalendar ? 0 : 1)
+                .offset(x: cardX, y: session.location.y - session.grabOffset.height)
+            CookieGlyph()
+                .frame(width: Self.cookieSize, height: Self.cookieSize)
+                // Rolls as it travels, sideways or up and down.
+                .rotationEffect(.degrees(Double(session.roll) * 1.2))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+                .scaleEffect(overCalendar ? 1 : 0.2)
+                .opacity(overCalendar ? 1 : 0)
+                .position(session.location)
+        }
+        .animation(.spring(duration: 0.32, bounce: 0.35), value: overCalendar)
     }
+
+    #if os(macOS)
+    private static let cookieSize: CGFloat = 52
+    private static let cardHeight: CGFloat = 32
+    #else
+    private static let cookieSize: CGFloat = 64
+    private static let cardHeight: CGFloat = 48
+    #endif
 }
 
 /// A task as it looks while being dragged: the row's checkbox ring and
 /// text on a lightly tinted card, so it reads as one rectangle picked up
-/// off the list. The Mac draws it as the drag ghost; the iPhone hands it
-/// to the system as the drag preview.
+/// off the list. Drawn by the planner's drag overlay on both platforms.
 struct DragCard: View {
     let text: String
     let isCompleted: Bool
     let width: CGFloat
-    /// Off on the iPhone, where the system draws its own shadow under the
-    /// preview.
-    var shadow = true
 
     private static let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
     #if os(macOS)
@@ -377,15 +426,12 @@ struct DragCard: View {
         .frame(width: width)
         .background {
             // Opaque base so the list doesn't show through, then the same
-            // tint as a hovered row, a shade stronger. A system color, not
-            // the background style: the iPhone renders the preview outside
-            // the view tree, where that style resolves to clear.
+            // tint as a hovered row, a shade stronger.
             Self.shape.fill(Self.base)
                 .overlay(Self.shape.fill(Color.primary.opacity(0.07)))
                 .overlay(Self.shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                .shadow(color: .black.opacity(shadow ? 0.22 : 0), radius: 10, y: 4)
+                .shadow(color: .black.opacity(0.22), radius: 10, y: 4)
         }
-        .contentShape(.dragPreview, Self.shape)
     }
 }
 

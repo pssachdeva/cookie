@@ -413,10 +413,13 @@ struct TaskRow: View {
         // Press and hold to lift the row, then drag; a hold without moving
         // opens the context menu instead.
         .onDrag {
-            drag.beginTouch(task: task)
+            drag.beginTouch(task: task, rowFrame: frame)
             return NSItemProvider(object: task.id.uuidString as NSString)
         } preview: {
-            DragCard(text: task.text, isCompleted: task.isCompleted, width: frame.width, shadow: false)
+            // Invisible: the planner draws the dragged task itself, so it
+            // can turn into a cookie over the calendar, which a system
+            // preview can't do.
+            Color.clear.frame(width: 1, height: 1)
         }
         #endif
         .contextMenu {
