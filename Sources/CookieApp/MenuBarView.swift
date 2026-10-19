@@ -3,9 +3,9 @@ import AppKit
 import CookieCore
 import CookieUI
 
-/// The menu bar panel: today's tasks, with the Earlier and Completed
-/// sections and an entry field, plus a way into the main window. It always
-/// shows today, whatever the main window is showing.
+/// The menu bar panel: a day's tasks, with the Earlier and Completed
+/// sections and an entry field, plus a way into the main window. It opens on
+/// today and can step a day at a time, whatever the main window is showing.
 struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var navigation: DayNavigation
@@ -15,8 +15,9 @@ struct MenuBarView: View {
     @State private var focusRequest = 0
 
     init(store: TaskStore) {
-        // Its own navigation, so it tracks today (midnight included) on its
-        // own and never follows the main window's selection.
+        // Its own navigation, so it tracks today (midnight included) and
+        // steps between days on its own, never following the main window's
+        // selection.
         let navigation = DayNavigation()
         _navigation = State(initialValue: navigation)
         _drag = State(initialValue: DragController(navigation: navigation, store: store))
@@ -29,12 +30,12 @@ struct MenuBarView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
 
-            EntryBar(draft: $draft, day: navigation.today, focusRequest: focusRequest)
+            EntryBar(draft: $draft, day: navigation.selectedDay, focusRequest: focusRequest)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 6)
 
-            DayListView(day: navigation.today, showsHeader: false)
-                .id(navigation.today)
+            DayListView(day: navigation.selectedDay, showsHeader: false)
+                .id(navigation.selectedDay)
         }
         .frame(width: 320, height: 440)
         .coordinateSpace(name: windowSpace)
@@ -49,6 +50,8 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
             guard let panel, note.object as? NSWindow === panel,
                   panel.occlusionState.contains(.visible) else { return }
+            // Each opening starts back on today.
+            navigation.goToToday()
             NSApp.activate()
             panel.makeKey()
             focusRequest += 1
@@ -78,12 +81,39 @@ struct MenuBarView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(navigation.today.date().formatted(.dateTime.weekday(.wide)))
+            Text(navigation.selectedDay.date().formatted(.dateTime.weekday(.wide)))
                 .font(.title3.weight(.semibold))
-            Text(navigation.today.date().formatted(.dateTime.month(.wide).day()))
-                .font(.title3)
-                .foregroundStyle(.secondary)
+            // The Today button and arrows leave less room off today, so fall
+            // back to a short month rather than wrapping.
+            ViewThatFits(in: .horizontal) {
+                Text(navigation.selectedDay.date().formatted(.dateTime.month(.wide).day()))
+                Text(navigation.selectedDay.date().formatted(.dateTime.month(.abbreviated).day()))
+            }
+            .lineLimit(1)
+            .font(.title3)
+            .foregroundStyle(.secondary)
             Spacer(minLength: 8)
+            if navigation.selectedDay != navigation.today {
+                Button("Today") { navigation.goToToday() }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.cookieAccent)
+                    .fixedSize()
+                    .buttonStyle(HeaderButtonStyle())
+            }
+            Button { step(by: -1) } label: {
+                Image(systemName: "chevron.left").font(.body.weight(.medium))
+            }
+            .buttonStyle(HeaderButtonStyle())
+            .foregroundStyle(.secondary)
+            .help("Previous day")
+            .accessibilityLabel("Previous day")
+            Button { step(by: 1) } label: {
+                Image(systemName: "chevron.right").font(.body.weight(.medium))
+            }
+            .buttonStyle(HeaderButtonStyle())
+            .foregroundStyle(.secondary)
+            .help("Next day")
+            .accessibilityLabel("Next day")
             Button {
                 openWindow(id: "main")
                 NSApp.activate()
@@ -97,6 +127,12 @@ struct MenuBarView: View {
             .help("Open the Cookie window")
             .accessibilityLabel("Open window")
         }
+    }
+}
+
+extension MenuBarView {
+    private func step(by days: Int) {
+        navigation.select(navigation.selectedDay.adding(days: days))
     }
 }
 
