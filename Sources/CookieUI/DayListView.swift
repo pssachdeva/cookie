@@ -282,7 +282,6 @@ struct TaskRow: View {
     @Environment(DragController.self) private var drag
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
-    @Environment(\.taskDraggingEnabled) private var draggingEnabled
     let task: TaskItem
     /// Shown for earlier-unfinished rows so their assigned day is visible.
     let showsDate: Bool
@@ -406,9 +405,8 @@ struct TaskRow: View {
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
         #if os(macOS)
-        // No row drag while editing, so dragging selects text instead, or
-        // where dragging is turned off (the menu bar panel).
-        .gesture(dragGesture, including: editing || !draggingEnabled ? .subviews : .all)
+        // No row drag while editing, so dragging selects text instead.
+        .gesture(dragGesture, including: editing ? .subviews : .all)
         #else
         // Press and hold to lift the row, then drag; a hold without moving
         // opens the context menu instead.
@@ -764,10 +762,4 @@ struct CookieGlyph: View {
             .scaledToFit()
         #endif
     }
-}
-
-extension EnvironmentValues {
-    /// Whether task rows can be dragged to move them. Off in the menu bar
-    /// panel, which only shows today and has nowhere to drag to.
-    @Entry public var taskDraggingEnabled = true
 }

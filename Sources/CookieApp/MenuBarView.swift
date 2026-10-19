@@ -20,7 +20,9 @@ struct MenuBarView: View {
         // selection.
         let navigation = DayNavigation()
         _navigation = State(initialValue: navigation)
-        _drag = State(initialValue: DragController(navigation: navigation, store: store))
+        let drag = DragController(navigation: navigation, store: store)
+        drag.arrowsStepDays = true
+        _drag = State(initialValue: drag)
     }
 
     var body: some View {
@@ -38,10 +40,11 @@ struct MenuBarView: View {
                 .id(navigation.selectedDay)
         }
         .frame(width: 320, height: 440)
+        .overlay { DragOverlay(drag: drag) }
+        .animation(.easeOut(duration: 0.15), value: drag.isDragging)
         .coordinateSpace(name: windowSpace)
         .environment(navigation)
         .environment(drag)
-        .environment(\.taskDraggingEnabled, false)
         .background(WindowReader { panel = $0 })
         .onExitCommand { dismissPanel() }
         // The panel stays alive between openings and doesn't take the
@@ -107,6 +110,7 @@ struct MenuBarView: View {
             .foregroundStyle(.secondary)
             .help("Previous day")
             .accessibilityLabel("Previous day")
+            .dragArrowTarget(forward: false)
             Button { step(by: 1) } label: {
                 Image(systemName: "chevron.right").font(.body.weight(.medium))
             }
@@ -114,6 +118,7 @@ struct MenuBarView: View {
             .foregroundStyle(.secondary)
             .help("Next day")
             .accessibilityLabel("Next day")
+            .dragArrowTarget(forward: true)
             Button {
                 openWindow(id: "main")
                 NSApp.activate()

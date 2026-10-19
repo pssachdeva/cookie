@@ -90,4 +90,21 @@ extension View {
     func reportFrame(_ action: @escaping (CGRect) -> Void) -> some View {
         onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(windowSpace)) }, action: action)
     }
+
+    /// Marks this view as the previous or next arrow for a drag: resting a
+    /// dragged task on it steps back or forward.
+    public func dragArrowTarget(forward: Bool) -> some View {
+        modifier(DragArrowTarget(forward: forward))
+    }
+}
+
+private struct DragArrowTarget: ViewModifier {
+    @Environment(DragController.self) private var drag
+    let forward: Bool
+
+    func body(content: Content) -> some View {
+        content.reportFrame { frame in
+            if forward { drag.nextMonthFrame = frame } else { drag.previousMonthFrame = frame }
+        }
+    }
 }

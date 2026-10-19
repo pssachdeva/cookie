@@ -56,6 +56,9 @@ public final class DragController {
     var nextMonthFrame: CGRect = .zero
     /// The whole calendar, where the dragged card turns into a cookie.
     var calendarFrame: CGRect = .zero
+    /// Whether resting on the arrows steps days rather than months. The
+    /// menu bar panel has no calendar, so its arrows always step days.
+    public var arrowsStepDays = false
 
     // Hover state.
     private(set) var hoverKey: AnyHashable?
@@ -82,7 +85,7 @@ public final class DragController {
         self.store = store
     }
 
-    var isDragging: Bool { session != nil }
+    public var isDragging: Bool { session != nil }
 
     /// Whether the drag is over the calendar, where it's carried as a
     /// cookie rather than a card.
@@ -274,14 +277,14 @@ public final class DragController {
         } else if previousMonthFrame.contains(p) {
             key = "previousMonth"
             delay = Self.arrowDwell
-            action = { [navigation] in
-                withAnimation(.snappy(duration: 0.3)) { Self.stepArrow(navigation, by: -1) }
+            action = { [navigation, arrowsStepDays] in
+                withAnimation(.snappy(duration: 0.3)) { Self.stepArrow(navigation, by: -1, days: arrowsStepDays) }
             }
         } else if nextMonthFrame.contains(p) {
             key = "nextMonth"
             delay = Self.arrowDwell
-            action = { [navigation] in
-                withAnimation(.snappy(duration: 0.3)) { Self.stepArrow(navigation, by: 1) }
+            action = { [navigation, arrowsStepDays] in
+                withAnimation(.snappy(duration: 0.3)) { Self.stepArrow(navigation, by: 1, days: arrowsStepDays) }
             }
         } else {
             key = nil
@@ -299,9 +302,9 @@ public final class DragController {
     }
 
     /// Mirrors the header arrows: months while the grid is shown, days when
-    /// the calendar is collapsed.
-    private static func stepArrow(_ navigation: DayNavigation, by amount: Int) {
-        if UserDefaults.standard.bool(forKey: "calendarCollapsed") {
+    /// the calendar is collapsed or there is none.
+    private static func stepArrow(_ navigation: DayNavigation, by amount: Int, days: Bool) {
+        if days || UserDefaults.standard.bool(forKey: "calendarCollapsed") {
             navigation.select(navigation.selectedDay.adding(days: amount))
         } else {
             navigation.showMonth(navigation.displayedMonth.adding(months: amount))
@@ -336,10 +339,14 @@ public final class DragController {
 
 /// Ghost row and insertion line, drawn over the whole
 /// window in its coordinate space. Never intercepts the pointer.
-struct DragOverlay: View {
+public struct DragOverlay: View {
     let drag: DragController
 
-    var body: some View {
+    public init(drag: DragController) {
+        self.drag = drag
+    }
+
+    public var body: some View {
         ZStack(alignment: .topLeading) {
             if let session = drag.session {
                 if let y = drag.insertionY {
