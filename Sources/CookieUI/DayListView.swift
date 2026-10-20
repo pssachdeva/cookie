@@ -62,6 +62,15 @@ public struct EntryBar: View {
     private func submit() {
         // Enter adds the task, clears the field, and keeps focus. The store
         // ignores whitespace-only input.
+        #if os(iOS)
+        // On the iPhone, Return on an empty field is the way out: it puts
+        // the keyboard away.
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = ""
+            focused = false
+            return
+        }
+        #endif
         store.add(draft, to: day)
         draft = ""
         focused = true
@@ -145,6 +154,10 @@ public struct DayListView: View {
             .padding(.bottom, 28)
             .animation(.snappy(duration: 0.3), value: store.tasks)
         }
+        #if os(iOS)
+        // Dragging the list down tucks the keyboard away with the finger.
+        .scrollDismissesKeyboard(.interactively)
+        #endif
         .onScrollGeometryChange(for: Bool.self, of: { $0.contentOffset.y > 0.5 }) { _, isScrolled in
             scrolled = isScrolled
         }
@@ -341,12 +354,10 @@ struct TaskRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             #if os(iOS)
-            // Double-tap edits, on the text column only: on touch, a
-            // double-tap gesture makes every single tap beneath it wait to
-            // see whether a second follows, so over the whole row it would
-            // hold up the checkbox.
+            // A tap on the text column edits, so the checkbox keeps its own
+            // tap. Off while editing, so taps move the cursor as usual.
             .contentShape(Rectangle())
-            .gesture(TapGesture(count: 2).onEnded(beginEditing), including: editing ? .subviews : .all)
+            .gesture(TapGesture().onEnded(beginEditing), including: editing ? .subviews : .all)
             #endif
 
             if showsDate {
@@ -425,7 +436,27 @@ struct TaskRow: View {
             if showsDate {
                 Button("Move to Today") { store.move(task.id, to: navigation.today) }
             }
+            Menu("Move To") {
+                ForEach(moveDays, id: \.self) { day in
+                    Button(Self.moveLabel(for: day, today: navigation.today)) {
+                        store.move(task.id, to: day)
+                    }
+                }
+            }
             Button("Delete", role: .destructive) { onDelete(task.id) }
+        }
+    }
+
+    /// Today and the next three days, minus the one the task is already on.
+    private var moveDays: [CalendarDay] {
+        (0...3).map { navigation.today.adding(days: $0) }.filter { $0 != task.day }
+    }
+
+    private static func moveLabel(for day: CalendarDay, today: CalendarDay) -> String {
+        switch day {
+        case today: "Today"
+        case today.adding(days: 1): "Tomorrow"
+        default: day.date().formatted(.dateTime.weekday(.wide))
         }
     }
 
