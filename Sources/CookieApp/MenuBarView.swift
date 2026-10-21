@@ -4,10 +4,9 @@ import CookieCore
 import CookieUI
 
 /// The menu bar panel: a day's tasks, with the Earlier and Completed
-/// sections and an entry field, plus a way into the main window. It opens on
-/// today and can step a day at a time, whatever the main window is showing.
+/// sections and an entry field. It opens on today and can step a day at a
+/// time, whatever the main window is showing.
 struct MenuBarView: View {
-    @Environment(\.openWindow) private var openWindow
     @State private var navigation: DayNavigation
     @State private var drag: DragController
     @State private var draft = ""
@@ -82,55 +81,49 @@ struct MenuBarView: View {
         return view.subviews.lazy.compactMap(statusButton(in:)).first
     }
 
+    /// The day, centered between the arrows. Clicking it goes back to today.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(navigation.selectedDay.date().formatted(.dateTime.weekday(.wide)))
-                .font(.title3.weight(.semibold))
-            // The Today button and arrows leave less room off today, so fall
-            // back to a short month rather than wrapping.
-            ViewThatFits(in: .horizontal) {
-                Text(navigation.selectedDay.date().formatted(.dateTime.month(.wide).day()))
-                Text(navigation.selectedDay.date().formatted(.dateTime.month(.abbreviated).day()))
-            }
-            .lineLimit(1)
-            .font(.title3)
-            .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            if navigation.selectedDay != navigation.today {
-                Button("Today") { navigation.goToToday() }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.cookieAccent)
-                    .fixedSize()
-                    .buttonStyle(HeaderButtonStyle())
-            }
+        HStack(spacing: 4) {
             Button { step(by: -1) } label: {
                 Image(systemName: "chevron.left").font(.body.weight(.medium))
             }
-            .buttonStyle(HeaderButtonStyle())
-            .foregroundStyle(.secondary)
             .help("Previous day")
             .accessibilityLabel("Previous day")
             .dragArrowTarget(forward: false)
+
+            Button { navigation.goToToday() } label: {
+                // Fall back to a short month rather than wrapping.
+                ViewThatFits(in: .horizontal) {
+                    title(month: .wide)
+                    title(month: .abbreviated)
+                }
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Go to today")
+
             Button { step(by: 1) } label: {
                 Image(systemName: "chevron.right").font(.body.weight(.medium))
             }
-            .buttonStyle(HeaderButtonStyle())
-            .foregroundStyle(.secondary)
             .help("Next day")
             .accessibilityLabel("Next day")
             .dragArrowTarget(forward: true)
-            Button {
-                openWindow(id: "main")
-                NSApp.activate()
-                dismissPanel()
-            } label: {
-                Image(systemName: "macwindow")
-                    .font(.body.weight(.medium))
-            }
-            .buttonStyle(HeaderButtonStyle())
-            .foregroundStyle(.secondary)
-            .help("Open the Cookie window")
-            .accessibilityLabel("Open window")
+        }
+        .buttonStyle(HeaderButtonStyle())
+        .foregroundStyle(.secondary)
+    }
+
+    private func title(month: Date.FormatStyle.Symbol.Month) -> some View {
+        let date = navigation.selectedDay.date()
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(date.formatted(.dateTime.weekday(.wide)))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(date.formatted(.dateTime.month(month).day()))
+                .font(.title3)
+                .foregroundStyle(.secondary)
         }
     }
 }
