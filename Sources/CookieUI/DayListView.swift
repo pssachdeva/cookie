@@ -318,6 +318,11 @@ struct TaskRow: View {
     // committed on Enter or when focus leaves, discarded on Escape.
     @State private var editing = false
     @State private var editText = ""
+    #if os(macOS)
+    /// Set when editing starts, until the new field's select-all has been
+    /// turned into a cursor at the end.
+    @State private var placeCursorAtEnd = false
+    #endif
     @FocusState private var editFocused: Bool
 
     private var rowSpace: String { "row-\(task.id.uuidString)" }
@@ -495,12 +500,39 @@ struct TaskRow: View {
                 // Clicking elsewhere commits, like renaming in Finder.
                 if !focused { commitEdit() }
             }
-            .onAppear { editFocused = true }
+            .onAppear {
+                // Focus on the next turn: asked for in the same update that
+                // adds the field, it doesn't take when another field (the
+                // entry bar) already has the keyboard.
+                DispatchQueue.main.async {
+                    editFocused = true
+                    #if os(macOS)
+                    // Past focusing, leave the selection to the person.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { placeCursorAtEnd = false }
+                    #endif
+                }
+            }
+            #if os(macOS)
+            // A newly focused field selects all its text. Turn that into a
+            // cursor at the end as it happens, before it's drawn, so the
+            // selection never flashes.
+            .onReceive(NotificationCenter.default.publisher(for: NSTextView.didChangeSelectionNotification)) { note in
+                guard placeCursorAtEnd, let editor = note.object as? NSTextView,
+                      editor.string == editText else { return }
+                let length = (editor.string as NSString).length
+                guard editor.selectedRange() != NSRange(location: length, length: 0) else { return }
+                placeCursorAtEnd = false
+                editor.setSelectedRange(NSRange(location: length, length: 0))
+            }
+            #endif
     }
 
     private func beginEditing() {
         guard !editing, !completing else { return }
         editText = task.text
+        #if os(macOS)
+        placeCursorAtEnd = true
+        #endif
         editing = true
     }
 

@@ -11,6 +11,7 @@ struct MenuBarView: View {
     @State private var drag: DragController
     @State private var draft = ""
     @State private var panel: NSWindow?
+    @State private var panelVisible = false
     @State private var focusRequest = 0
 
     init(store: TaskStore) {
@@ -49,9 +50,14 @@ struct MenuBarView: View {
         // The panel stays alive between openings and doesn't take the
         // keyboard on its own, so each time it comes on screen make it the
         // key window and put the cursor in the entry field.
+        // Only on the change from hidden to shown: occlusion changes also
+        // arrive while the panel is open, and refocusing the entry field
+        // then would cancel an edit in progress.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { note in
-            guard let panel, note.object as? NSWindow === panel,
-                  panel.occlusionState.contains(.visible) else { return }
+            guard let panel, note.object as? NSWindow === panel else { return }
+            let visible = panel.occlusionState.contains(.visible)
+            defer { panelVisible = visible }
+            guard visible, !panelVisible else { return }
             // Each opening starts back on today.
             navigation.goToToday()
             NSApp.activate()
