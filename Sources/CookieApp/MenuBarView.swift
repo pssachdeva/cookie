@@ -13,6 +13,7 @@ struct MenuBarView: View {
     @State private var panel: NSWindow?
     @State private var panelVisible = false
     @State private var focusRequest = 0
+    @Environment(\.openWindow) private var openWindow
 
     init(store: TaskStore) {
         // Its own navigation, so it tracks today (midnight included) and
@@ -87,7 +88,17 @@ struct MenuBarView: View {
         return view.subviews.lazy.compactMap(statusButton(in:)).first
     }
 
-    /// The day, centered between the arrows. Clicking it goes back to today.
+    /// Closes the panel and brings up the main window, reopening it if it
+    /// was closed. The panel goes first: once the main window takes over,
+    /// the panel may already be gone and the toggle would bring it back.
+    private func openMainWindow() {
+        dismissPanel()
+        openWindow(id: "main")
+        NSApp.activate()
+    }
+
+    /// The day, centered between the arrows. Clicking it goes back to today;
+    /// the button beside it opens the main window.
     private var header: some View {
         HStack(spacing: 4) {
             Button { step(by: -1) } label: {
@@ -104,11 +115,21 @@ struct MenuBarView: View {
                     title(month: .abbreviated)
                 }
                 .lineLimit(1)
+                // Room for the open button on the right, matched on the
+                // left so the date stays centered.
+                .padding(.horizontal, 26)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Go to today")
+            .overlay(alignment: .trailing) {
+                Button(action: openMainWindow) {
+                    Image(systemName: "macwindow").font(.callout)
+                }
+                .help("Open Cookie")
+                .accessibilityLabel("Open Cookie")
+            }
 
             Button { step(by: 1) } label: {
                 Image(systemName: "chevron.right").font(.body.weight(.medium))
