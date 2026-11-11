@@ -82,6 +82,7 @@ public struct DayListView: View {
     @Environment(DayNavigation.self) private var navigation
     @Environment(DragController.self) private var drag
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.isCurrentDayPage) private var isCurrentPage
     // Animated @State mirrors of the persisted section states; see
     // CalendarView for why @AppStorage cannot be animated directly.
     @AppStorage("completedExpanded") private var storedCompletedExpanded = false
@@ -132,8 +133,13 @@ public struct DayListView: View {
                                 .transition(rowTransition)
                         }
                     }
-                    .reportFrame { drag.activeListFrame = $0 }
-                    .onChange(of: active.map(\.id), initial: true) { _, ids in drag.activeRows = ids }
+                    .reportFrame { if isCurrentPage { drag.activeListFrame = $0 } }
+                    .onChange(of: active.map(\.id), initial: true) { _, ids in
+                        if isCurrentPage { drag.activeRows = ids }
+                    }
+                    .onChange(of: isCurrentPage) { _, current in
+                        if current { drag.activeRows = active.map(\.id) }
+                    }
 
                     if active.isEmpty && earlier.isEmpty {
                         Text(completed.isEmpty ? "Nothing planned" : "All done")
@@ -161,13 +167,17 @@ public struct DayListView: View {
         .onScrollGeometryChange(for: Bool.self, of: { $0.contentOffset.y > 0.5 }) { _, isScrolled in
             scrolled = isScrolled
         }
-        .reportFrame { drag.listFrame = $0 }
+        .reportFrame { if isCurrentPage { drag.listFrame = $0 } }
         .onAppear {
             completedExpanded = storedCompletedExpanded
             earlierExpanded = storedEarlierExpanded
         }
         .onChange(of: completedExpanded) { _, value in storedCompletedExpanded = value }
         .onChange(of: earlierExpanded) { _, value in storedEarlierExpanded = value }
+        // Neighboring day pages stay alive on the iPhone; follow a toggle
+        // made on another page.
+        .onChange(of: storedCompletedExpanded) { _, value in completedExpanded = value }
+        .onChange(of: storedEarlierExpanded) { _, value in earlierExpanded = value }
     }
 
     private var dayHeader: some View {
@@ -240,6 +250,19 @@ public struct DayListView: View {
     }
 }
 
+/// A frame kept outside SwiftUI's change tracking: writing it doesn't
+/// re-render the view that holds it.
+final class FrameBox {
+    var rect: CGRect = .zero
+}
+
+extension EnvironmentValues {
+    /// False on the iPhone's day pages beside the one showing. They mustn't
+    /// feed the drag their frames, which would point drops at a page that
+    /// is off screen.
+    @Entry var isCurrentDayPage = true
+}
+
 /// Section header: a left-aligned "Title  N". With an `expanded` binding it
 /// is a collapse toggle with a chevron that turns like the month title's;
 /// without one it is a plain label.
@@ -295,6 +318,7 @@ struct TaskRow: View {
     @Environment(DragController.self) private var drag
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.isCurrentDayPage) private var isCurrentPage
     let task: TaskItem
     /// Shown for earlier-unfinished rows so their assigned day is visible.
     let showsDate: Bool
@@ -327,10 +351,15 @@ struct TaskRow: View {
 
     private var rowSpace: String { "row-\(task.id.uuidString)" }
 
-    // Drag bookkeeping: the row's own frame for the grab offset, and whether
-    // this gesture already started a session (so a cancelled drag doesn't
-    // restart while the button is still down).
-    @State private var frame: CGRect = .zero
+    // Drag bookkeeping: the row's frame in the window for the grab offset,
+    // and whether this gesture already started a session (so a cancelled
+    // drag doesn't restart while the button is still down). The frame is in
+    // a plain box, not state: it changes on every frame while the list
+    // slides (the calendar folding, say), and as state it re-rendered every
+    // row on every frame.
+    @State private var windowFrame = FrameBox()
+    /// The row's width, for the completion roll. Changes only on resize.
+    @State private var width: CGFloat = 0
     @State private var dragStarted = false
 
     private var isBeingDragged: Bool { drag.session?.taskID == task.id }
@@ -379,7 +408,7 @@ struct TaskRow: View {
         .mask {
             // Padded so the cookie, which overhangs the ring, isn't trimmed.
             if rolling {
-                WipeMask(progress: roll, startX: checkFrame.midX, rowWidth: frame.width)
+                WipeMask(progress: roll, startX: checkFrame.midX, rowWidth: width)
                     .padding(-4)
             } else {
                 Rectangle()
@@ -394,7 +423,7 @@ struct TaskRow: View {
                 CookieGlyph()
                     .frame(width: CheckCircle.cookieSize, height: CheckCircle.cookieSize)
                     .rotationEffect(.degrees(Double(roll) * 540))
-                    .position(x: checkFrame.midX + roll * frame.width, y: checkFrame.midY)
+                    .position(x: checkFrame.midX + roll * width, y: checkFrame.midY)
                     .allowsHitTesting(false)
             }
         }
@@ -419,7 +448,8 @@ struct TaskRow: View {
         .gesture(TapGesture(count: 2).onEnded(beginEditing), including: editing ? .none : .all)
         #endif
         .opacity(isBeingDragged ? 0.25 : 1)
-        .reportFrame { frame = $0; drag.rowFrames[task.id] = $0 }
+        .reportFrame { windowFrame.rect = $0; if isCurrentPage { drag.rowFrames[task.id] = $0 } }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
         #if os(macOS)
         // No row drag while editing, so dragging selects text instead.
         .gesture(dragGesture, including: editing ? .subviews : .all)
@@ -427,7 +457,7 @@ struct TaskRow: View {
         // Press and hold to lift the row, then drag; a hold without moving
         // opens the context menu instead.
         .onDrag {
-            drag.beginTouch(task: task, rowFrame: frame)
+            drag.beginTouch(task: task, rowFrame: windowFrame.rect)
             return NSItemProvider(object: task.id.uuidString as NSString)
         } preview: {
             // Invisible: the planner draws the dragged task itself, so it
@@ -450,6 +480,11 @@ struct TaskRow: View {
             }
             Button("Delete", role: .destructive) { onDelete(task.id) }
         }
+        #if os(iOS)
+        // Swiping to another day carries this row off screen; finish its
+        // edit rather than leave it open there.
+        .onChange(of: isCurrentPage) { _, current in if !current { commitEdit() } }
+        #endif
     }
 
     /// Today and the next three days, minus the one the task is already on.
@@ -473,7 +508,7 @@ struct TaskRow: View {
             .onChanged { value in
                 if !dragStarted {
                     dragStarted = true
-                    drag.begin(task: task, rowFrame: frame, grabbedAt: value.startLocation, now: value.location)
+                    drag.begin(task: task, rowFrame: windowFrame.rect, grabbedAt: value.startLocation, now: value.location)
                 }
             }
             .onEnded { _ in

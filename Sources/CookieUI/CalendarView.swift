@@ -12,6 +12,10 @@ struct CalendarView: View {
     @AppStorage("calendarCollapsed") private var storedCollapsed = false
     @State private var collapsed = false
     @Namespace private var selectionNamespace
+    #if os(iOS)
+    /// The month page under the center of the grid.
+    @State private var monthPage: Int?
+    #endif
     let navigation: DayNavigation
 
     private let calendar = Calendar.current
@@ -24,20 +28,7 @@ struct CalendarView: View {
             // the header row on the calendar surface.
             VStack(spacing: 0) {
                 #if os(iOS)
-                // Swipe the grid sideways to change months. The gesture
-                // needs clear horizontal travel, so taps on days are
-                // untouched, and it sits on the container so it survives
-                // the grid being replaced by the month transition.
                 monthArea
-                    .gesture(
-                        DragGesture(minimumDistance: 24)
-                            .onEnded { value in
-                                let dx = value.translation.width
-                                let dy = value.translation.height
-                                guard abs(dx) > 50, abs(dx) > abs(dy) * 1.5 else { return }
-                                shift(by: dx < 0 ? 1 : -1)
-                            }
-                    )
                     .padding(.bottom, 8)
                 #else
                 monthArea
@@ -66,20 +57,92 @@ struct CalendarView: View {
     private var monthArea: some View {
         VStack(spacing: 6) {
             weekdayRow
-            MonthGridView(
-                month: navigation.displayedMonth,
-                selected: navigation.selectedDay,
-                today: navigation.today,
-                unfinished: store.daysWithUnfinished(in: navigation.displayedMonth),
-                selectionNamespace: selectionNamespace,
-                onSelect: { day in withAnimation(.smooth(duration: 0.3)) { navigation.select(day) } }
-            )
-            .id(navigation.displayedMonth)
-            .transition(monthTransition)
-            .clipped()
-            .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: navigation.displayedMonth)
+            #if os(iOS)
+            monthPager
+            #else
+            grid(for: navigation.displayedMonth, isLive: true)
+                .id(navigation.displayedMonth)
+                .transition(monthTransition)
+                .clipped()
+                .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: navigation.displayedMonth)
+            #endif
         }
     }
+
+    private func grid(for month: CalendarMonth, isLive: Bool) -> some View {
+        MonthGridView(
+            month: month,
+            selected: navigation.selectedDay,
+            today: navigation.today,
+            unfinished: store.daysWithUnfinished(in: month),
+            selectionNamespace: selectionNamespace,
+            isLive: isLive,
+            onSelect: { day in withAnimation(.smooth(duration: 0.3)) { navigation.select(day) } }
+        )
+    }
+
+    #if os(iOS)
+    /// The months as side-by-side pages. Swiping drags the neighboring
+    /// month in with the finger, and letting go settles on whichever is
+    /// mostly showing. Swipes need clear sideways travel, so taps on days
+    /// are untouched.
+    private var monthPager: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(0..<Self.monthPageCount, id: \.self) { index in
+                    let month = Self.month(atPage: index)
+                    grid(for: month, isLive: month == navigation.displayedMonth)
+                        .containerRelativeFrame(.horizontal)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollIndicators(.hidden)
+        // Centered, so the month changes once a page is more than halfway in.
+        .scrollPosition(id: $monthPage, anchor: .center)
+        .frame(height: MonthGridView.touchGridHeight)
+        .onAppear { monthPage = Self.page(of: navigation.displayedMonth) }
+        .onChange(of: monthPage) { _, page in
+            guard let page else { return }
+            let month = Self.month(atPage: page)
+            if month != navigation.displayedMonth { navigation.showMonth(month) }
+        }
+        // Months shown from elsewhere (the arrows, Today, picking a day in
+        // the next month): the neighboring month slides in; anything
+        // further jumps straight there.
+        .onChange(of: navigation.displayedMonth) { _, month in
+            let target = Self.page(of: month)
+            guard target != monthPage else { return }
+            if let monthPage, abs(target - monthPage) == 1, !reduceMotion {
+                withAnimation(.smooth(duration: 0.35)) { self.monthPage = target }
+            } else {
+                monthPage = target
+            }
+        }
+    }
+
+    /// Page zero is January 1970; the pages run two hundred years on.
+    private static let firstPagedMonth = CalendarMonth(year: 1970, month: 1)
+    private static let monthPageCount = 200 * 12
+
+    private static func month(atPage page: Int) -> CalendarMonth {
+        CalendarMonth(year: firstPagedMonth.year + page / 12, month: page % 12 + 1)
+    }
+
+    private static func page(of month: CalendarMonth) -> Int {
+        let page = (month.year - firstPagedMonth.year) * 12 + month.month - 1
+        return min(max(page, 0), monthPageCount - 1)
+    }
+    #endif
+
+    #if os(iOS)
+    /// Quicker on the iPhone, where the fold is a tap away and a long
+    /// settle felt slow.
+    private static let foldAnimation = Animation.snappy(duration: 0.25)
+    #else
+    private static let foldAnimation = Animation.smooth(duration: 0.35)
+    #endif
 
     private var header: some View {
         HStack(spacing: 2) {
@@ -88,7 +151,7 @@ struct CalendarView: View {
                 // withAnimation, not a scoped .animation modifier, so the
                 // parent layout (entry bar, list) moves in the same
                 // transaction as the fold instead of jumping ahead of it.
-                withAnimation(reduceMotion ? nil : .smooth(duration: 0.35)) { collapsed.toggle() }
+                withAnimation(reduceMotion ? nil : Self.foldAnimation) { collapsed.toggle() }
                 storedCollapsed = collapsed
             } label: {
                 HStack(spacing: 6) {
@@ -98,6 +161,9 @@ struct CalendarView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .contentTransition(.numericText())
+                        // Swiping changes the month mid-gesture, outside any
+                        // animation, so the title animates on its own.
+                        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: monthTitle)
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.tertiary)
@@ -160,6 +226,7 @@ struct CalendarView: View {
         return month.firstDay.date().formatted(.dateTime.month(.wide).year())
     }
 
+    #if os(macOS)
     private var monthTransition: AnyTransition {
         if reduceMotion { return .opacity }
         let forward = navigation.monthDirection == .forward
@@ -168,6 +235,7 @@ struct CalendarView: View {
             removal: .move(edge: forward ? .leading : .trailing)
         )
     }
+    #endif
 
     /// Arrows browse months when the grid is visible and step days when it
     /// is collapsed.
@@ -185,7 +253,9 @@ struct MonthGridView: View {
     #if os(iOS)
     /// Fixed on the iPhone (no resize handle); tall enough to be a
     /// comfortable touch target.
-    private let rowHeight: Double = 44
+    private let rowHeight: Double = Self.touchRowHeight
+    static let touchRowHeight: Double = 44
+    static let touchGridHeight = touchRowHeight * 6
     #else
     @AppStorage(CalendarSizeHandle.key) private var rowHeight = CalendarSizeHandle.defaultRowHeight
     #endif
@@ -194,6 +264,10 @@ struct MonthGridView: View {
     let today: CalendarDay
     let unfinished: Set<CalendarDay>
     let selectionNamespace: Namespace.ID
+    /// The month showing, as opposed to a neighbor page on the iPhone. Only
+    /// it feeds the drag its day frames and owns the gliding selection mark,
+    /// since neighbors repeat its leading and trailing days.
+    let isLive: Bool
     let onSelect: (CalendarDay) -> Void
 
     var body: some View {
@@ -214,11 +288,11 @@ struct MonthGridView: View {
                                 isToday: day == today,
                                 hasUnfinished: unfinished.contains(day),
                                 isPast: day < today,
-                                selectionNamespace: selectionNamespace
+                                selectionNamespace: isLive ? selectionNamespace : nil
                             )
                         }
                         .buttonStyle(.plain)
-                        .reportFrame { drag.cellFrames[day] = $0 }
+                        .reportFrame { if isLive { drag.cellFrames[day] = $0 } }
                     }
                 }
                 .frame(height: rowHeight)
@@ -234,7 +308,8 @@ struct DayCell: View {
     let isToday: Bool
     let hasUnfinished: Bool
     let isPast: Bool
-    let selectionNamespace: Namespace.ID
+    /// Nil on a neighboring month page, whose mark stays put.
+    let selectionNamespace: Namespace.ID?
 
     var body: some View {
         // The number is always centered in its mark, and the unfinished-task
@@ -251,9 +326,14 @@ struct DayCell: View {
                 // The selection mark is matched across cells, so it glides
                 // from the old date to the new one within a month.
                 if isSelected {
-                    DayMark()
-                        .fill(Color.cookieAccent)
-                        .matchedGeometryEffect(id: "selection", in: selectionNamespace)
+                    if let selectionNamespace {
+                        DayMark()
+                            .fill(Color.cookieAccent)
+                            .matchedGeometryEffect(id: "selection", in: selectionNamespace)
+                    } else {
+                        DayMark()
+                            .fill(Color.cookieAccent)
+                    }
                 }
                 Text("\(day.day)")
                     .font(.system(size: 13, weight: isToday || isSelected ? .semibold : .regular))

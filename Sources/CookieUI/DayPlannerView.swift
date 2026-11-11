@@ -35,12 +35,18 @@ public struct DayPlannerView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 6)
 
+            #if os(iOS)
+            DayPager(navigation: navigation)
+            #else
             DayListView(day: navigation.selectedDay)
                 .id(navigation.selectedDay)
                 .transition(dayTransition)
+            #endif
         }
         .clipped()
+        #if os(macOS)
         .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: navigation.selectedDay)
+        #endif
         .overlay { DragOverlay(drag: drag) }
         .animation(.easeOut(duration: 0.15), value: drag.isDragging)
         .coordinateSpace(name: windowSpace)
@@ -55,6 +61,7 @@ public struct DayPlannerView: View {
         .background(.background)
     }
 
+    #if os(macOS)
     /// The outgoing list fades; the incoming one fades in with a small drift
     /// in the direction of travel. No full-height slide.
     private var dayTransition: AnyTransition {
@@ -65,7 +72,103 @@ public struct DayPlannerView: View {
             removal: .opacity
         )
     }
+    #endif
 }
+
+#if os(iOS)
+/// The day lists as side-by-side pages. Swiping drags the neighboring day
+/// in with the finger, and letting go settles on whichever day is mostly
+/// showing, with the system's own paging physics.
+private struct DayPager: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let navigation: DayNavigation
+    /// The day on page zero. Pages are numbered from it, so the scroll
+    /// position is a plain index.
+    @State private var anchor: CalendarDay
+    /// The page under the center of the screen.
+    @State private var position: Int?
+
+    /// Pages either side of the anchor. Moving further re-anchors.
+    private static let reach = 1000
+
+    init(navigation: DayNavigation) {
+        self.navigation = navigation
+        _anchor = State(initialValue: navigation.selectedDay)
+        _position = State(initialValue: 0)
+    }
+
+    var body: some View {
+        // Pages are sized to exactly the space the pager has. Sizing them
+        // from the scroll view as a container made them taller than the
+        // pager on iOS 26, which centered them and pushed the day header up
+        // under the entry bar.
+        GeometryReader { proxy in
+            pager(pageSize: proxy.size)
+        }
+        .clipped()
+    }
+
+    private func pager(pageSize: CGSize) -> some View {
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 0) {
+                ForEach(-Self.reach...Self.reach, id: \.self) { offset in
+                    let day = anchor.adding(days: offset)
+                    // Equatable, so a new page size (every frame while the
+                    // calendar folds) only lays the list out again rather
+                    // than rebuilding all its rows.
+                    DayPage(day: day, isCurrent: day == navigation.selectedDay)
+                        .equatable()
+                        .frame(width: pageSize.width, height: pageSize.height)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollIndicators(.hidden)
+        // Centered, so the day changes once a page is more than halfway in.
+        .scrollPosition(id: $position, anchor: .center)
+        .onChange(of: position) { _, offset in
+            guard let offset else { return }
+            let day = anchor.adding(days: offset)
+            guard day != navigation.selectedDay else { return }
+            withAnimation(.smooth(duration: 0.3)) { navigation.select(day) }
+        }
+        // Days picked elsewhere (the calendar, the arrows, a drag): the next
+        // or previous day slides in; anything further jumps straight there.
+        .onChange(of: navigation.selectedDay) { _, day in
+            let target = Self.days(from: anchor, to: day)
+            if abs(target) > Self.reach - 10 {
+                anchor = day
+                position = 0
+                return
+            }
+            guard target != position else { return }
+            if let position, abs(target - position) == 1, !reduceMotion {
+                withAnimation(.smooth(duration: 0.3)) { self.position = target }
+            } else {
+                position = target
+            }
+        }
+    }
+
+    private static func days(from start: CalendarDay, to end: CalendarDay) -> Int {
+        Calendar.current.dateComponents([.day], from: start.date(), to: end.date()).day ?? 0
+    }
+}
+
+/// One day's list in the pager.
+private struct DayPage: View, Equatable {
+    let day: CalendarDay
+    /// Only the page showing feeds the drag its frames (a neighbor shares
+    /// rows, like yesterday's unfinished tasks under today's Earlier).
+    let isCurrent: Bool
+
+    var body: some View {
+        DayListView(day: day)
+            .environment(\.isCurrentDayPage, isCurrent)
+    }
+}
+#endif
 
 /// Where the calendar header sits. The Mac puts it in the hidden title bar's
 /// row, beside the traffic lights; the iPhone puts it under the status bar.
