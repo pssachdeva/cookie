@@ -39,6 +39,8 @@ public final class CookieModel {
             file.scheduleSave { store.tasks }
             if change.origin == .local { sync?.localChange(change.ids) }
         }
+        // Before sync starts, which is fine: sync writes the purge down as
+        // it happens and deletes those records once it is running.
         store.purgeDeleted(olderThan: TaskFile.deletedRetention)
         sync?.start()
 
