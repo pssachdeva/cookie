@@ -59,6 +59,10 @@ public final class CloudSync: CKSyncEngineDelegate {
 
     public func start() {
         guard engine == nil else { return }
+        // A task that is in the store is not purged, whatever was recorded.
+        state.pendingDeletes.subtract(store.tasks.map(\.id))
+        let refetch = forgetLostTasks()
+        catchUpWithKnownServerCopies()
         let firstRun = state.engine == nil
         let engine = CKSyncEngine(CKSyncEngine.Configuration(
             database: database, stateSerialization: state.engine, delegate: self
@@ -72,14 +76,57 @@ public final class CloudSync: CKSyncEngineDelegate {
         // The engine's own scheduler can wait minutes; the spec wants
         // changes across within seconds, so send right away.
         scheduleSend(after: 0)
+        if refetch { fetchChanges() }
     }
 
-    /// Queues local changes for upload. Called for every local store change.
+    /// Looks for tasks the server is known to hold that the store has lost
+    /// without purging them: the task file was removed, couldn't be read,
+    /// or was restored from an older copy. Their records are left alone and
+    /// the engine's place in the server's history is dropped, so it fetches
+    /// everything again and the tasks come back. Returns whether it did.
+    private func forgetLostTasks() -> Bool {
+        let lost = SyncPlan.startup(
+            tasks: store.tasks, records: state.records, pendingDeletes: state.pendingDeletes
+        ).orphans
+        guard !lost.isEmpty else { return false }
+        log.error("\(lost.count) synced tasks are missing from the task file; fetching them again")
+        for id in lost { state.records[id] = nil }
+        state.engine = nil
+        saveState()
+        return true
+    }
+
+    /// Merges in the server copies already on hand where the store is
+    /// behind them: a task file restored from an older copy. Done before
+    /// anything is queued, so what is sent is never older than what the
+    /// server already has.
+    private func catchUpWithKnownServerCopies() {
+        let stale = SyncPlan.startup(
+            tasks: store.tasks, records: state.records, pendingDeletes: state.pendingDeletes
+        ).stale
+        guard !stale.isEmpty else { return }
+        log.notice("\(stale.count) tasks in the task file are older than the server's copies; merging those in")
+        store.applyRemote(stale.compactMap { state.records[$0]?.server })
+        flushTasks()
+    }
+
+    /// Queues local changes for upload. Called for every local store change,
+    /// including the purge of old deleted tasks, which runs before `start`.
     public func localChange(_ ids: Set<UUID>) {
+        // A task that has left the store was purged. Write that down first:
+        // it is the only thing that ever deletes a record, and it has to
+        // outlast a quit before the delete is sent.
+        let purged = ids.filter { store.task($0) == nil && state.records[$0] != nil }
+        if !purged.isEmpty {
+            state.pendingDeletes.formUnion(purged)
+            flushTasks()
+            saveState()
+        }
         guard let engine else { return }
-        engine.state.add(pendingRecordZoneChanges: ids.map { id in
+        engine.state.add(pendingRecordZoneChanges: ids.compactMap { id in
             let recordID = TaskRecord.recordID(for: id)
-            return store.task(id) != nil ? .saveRecord(recordID) : .deleteRecord(recordID)
+            if store.task(id) != nil { return .saveRecord(recordID) }
+            return state.pendingDeletes.contains(id) ? .deleteRecord(recordID) : nil
         })
         // Short debounce so a burst of edits goes up as one batch.
         scheduleSend(after: 0.5)
@@ -120,20 +167,24 @@ public final class CloudSync: CKSyncEngineDelegate {
     /// Compares the store against what the server is known to have, and
     /// queues whatever differs. Covers the first sync, and any change made
     /// just before a quit or crash that didn't make it into the saved queue.
+    /// Deletes come only from recorded purges, never from a task being
+    /// absent from the store.
     private func queueUnsyncedChanges() {
         guard let engine else { return }
-        var pending: [CKSyncEngine.PendingRecordZoneChange] = []
-        for task in store.tasks {
-            let server = state.records[task.id]?.serverModifiedAt
-            if server.map({ task.modifiedAt.isLater(than: $0) }) ?? true {
-                pending.append(.saveRecord(TaskRecord.recordID(for: task.id)))
-            }
-        }
-        let live = Set(store.tasks.map(\.id))
-        for id in state.records.keys where !live.contains(id) {
-            pending.append(.deleteRecord(TaskRecord.recordID(for: id)))
-        }
-        engine.state.add(pendingRecordZoneChanges: pending)
+        let plan = SyncPlan.startup(
+            tasks: store.tasks, records: state.records, pendingDeletes: state.pendingDeletes
+        )
+        engine.state.add(pendingRecordZoneChanges:
+            plan.saves.map { .saveRecord(TaskRecord.recordID(for: $0)) }
+                + plan.deletes.map { .deleteRecord(TaskRecord.recordID(for: $0)) }
+        )
+    }
+
+    /// Drops everything known about the server's records, for when they
+    /// belong to another account or the zone is gone.
+    private func forgetServerRecords() {
+        state.records = [:]
+        state.pendingDeletes = []
     }
 
     // MARK: CKSyncEngineDelegate
@@ -164,13 +215,13 @@ public final class CloudSync: CKSyncEngineDelegate {
             switch change.changeType {
             case .signIn:
                 // Upload everything to the new account.
-                state.records = [:]
+                forgetServerRecords()
                 engine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: TaskRecord.zoneID))])
                 queueUnsyncedChanges()
             case .signOut, .switchAccounts:
                 // Tasks stay on this Mac; only the link to the old account's
                 // records is dropped. A new sign-in uploads them afresh.
-                state.records = [:]
+                forgetServerRecords()
             @unknown default:
                 break
             }
@@ -181,7 +232,7 @@ public final class CloudSync: CKSyncEngineDelegate {
             // data cleared in Settings). Keep this Mac's tasks and upload
             // them again rather than erasing anything on a remote signal.
             if changes.deletions.contains(where: { $0.zoneID == TaskRecord.zoneID }) {
-                state.records = [:]
+                forgetServerRecords()
                 engine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: TaskRecord.zoneID))])
                 queueUnsyncedChanges()
                 saveState()
@@ -193,13 +244,24 @@ public final class CloudSync: CKSyncEngineDelegate {
             for modification in changes.modifications {
                 let record = modification.record
                 guard let item = TaskRecord.item(from: record) else { continue }
+                // Purged here, with its delete on the way: don't bring it back.
+                guard !state.pendingDeletes.contains(item.id) else { continue }
                 remember(record, as: item)
                 incoming.append(item)
             }
             let deleted = Set(changes.deletions.compactMap { TaskRecord.taskID(of: $0.recordID) })
-            for id in deleted { state.records[id] = nil }
+            for id in deleted { forget(id) }
             store.applyRemote(incoming)
             store.removeRemote(deleted)
+            // Merging can leave this side holding something the server
+            // lacks; make sure that goes up even if the saved queue lost it.
+            let ahead = incoming.filter { item in
+                store.task(item.id).map { SyncPlan.needsUpload(local: $0, server: item) } ?? false
+            }
+            if !ahead.isEmpty {
+                engine?.state.add(pendingRecordZoneChanges: ahead.map { .saveRecord(TaskRecord.recordID(for: $0.id)) })
+                scheduleSend(after: 0.5)
+            }
             flushTasks()
             saveState()
 
@@ -215,7 +277,14 @@ public final class CloudSync: CKSyncEngineDelegate {
                 if let item = TaskRecord.item(from: record) { remember(record, as: item) }
             }
             for recordID in sent.deletedRecordIDs {
-                if let id = TaskRecord.taskID(of: recordID) { state.records[id] = nil }
+                if let id = TaskRecord.taskID(of: recordID) { forget(id) }
+            }
+            for (recordID, error) in sent.failedRecordDeletes {
+                // Already gone from the server, which is what was wanted.
+                // Other failures stay recorded and are sent again.
+                guard error.code == .unknownItem || error.code == .zoneNotFound,
+                      let id = TaskRecord.taskID(of: recordID) else { continue }
+                forget(id)
             }
             handleFailedSaves(sent.failedRecordSaves)
             flushTasks()
@@ -240,7 +309,7 @@ public final class CloudSync: CKSyncEngineDelegate {
                       let item = TaskRecord.item(from: server) else { continue }
                 remember(server, as: item)
                 store.applyRemote([item])
-                if let merged = store.task(id), merged.modifiedAt.isLater(than: item.modifiedAt) {
+                if let merged = store.task(id), SyncPlan.needsUpload(local: merged, server: item) {
                     retry.append(.saveRecord(recordID))
                 }
             case .zoneNotFound:
@@ -280,8 +349,14 @@ public final class CloudSync: CKSyncEngineDelegate {
     private func remember(_ record: CKRecord, as item: TaskItem) {
         state.records[item.id] = SyncState.RecordInfo(
             systemFields: record.encodedSystemFields,
-            serverModifiedAt: item.modifiedAt
+            server: item
         )
+    }
+
+    /// The server no longer has this task's record.
+    private func forget(_ id: UUID) {
+        state.records[id] = nil
+        state.pendingDeletes.remove(id)
     }
 
     private func saveState() {

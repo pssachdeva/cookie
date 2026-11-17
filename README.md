@@ -66,7 +66,7 @@ The scripts point `DEVELOPER_DIR` at `/Applications/Xcode.app` unless it's alrea
 
 ## Where tasks are stored
 
-Tasks are saved as JSON at `~/Library/Application Support/Cookie/tasks.json`, a moment after each change and again when the app quits. The file is plain, readable JSON. If it ever can't be read, the app moves it aside as `tasks-unreadable-<timestamp>.json` instead of overwriting it. Deleted tasks are kept for 30 days, so undo works, and then dropped.
+Tasks are saved as JSON at `~/Library/Application Support/Cookie/tasks.json`, a moment after each change and again when the app quits. The file is plain, readable JSON. If it ever can't be read, the app moves it aside as `tasks-unreadable-<timestamp>.json` instead of overwriting it. With iCloud sync on, tasks missing from the file (because it was removed, unreadable, or restored from an older copy) are fetched from iCloud again; they are never deleted there. Deleted tasks are kept for 30 days, so undo works, and then dropped.
 
 Three environment variables help during development:
 
@@ -86,7 +86,7 @@ open --env COOKIE_SAMPLE_DATA=1 build/Cookie.app
 
 Each task is one record in a `Tasks` zone of your private CloudKit database, and the task text is end-to-end encrypted. `CKSyncEngine` uploads local changes and fetches other devices' changes, prompted by silent push notifications and whenever the app comes to the front.
 
-The local file stays the source the app reads from. When two devices change the same task, the changes merge field by field: the text, the day and position, the completion, and the deletion each keep the most recent change. Completing a task on one device and editing its text on another keeps both. Sync bookkeeping is kept in `sync-state.plist` beside `tasks.json`.
+The local file stays the source the app reads from. When two devices change the same task, the changes merge field by field: the text, the day and position, the completion, and the deletion each keep the most recent change. Completing a task on one device and editing its text on another keeps both. Sync bookkeeping is kept in `sync-state.plist` beside `tasks.json`: the server's last copy of each task, and the deleted tasks dropped after 30 days whose records are still to be removed from iCloud. A record is removed from iCloud only for that reason.
 
 Sync only runs in the signed build. Changes made in an unsigned build are uploaded the next time the signed build runs.
 
