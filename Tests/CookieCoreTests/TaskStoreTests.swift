@@ -165,6 +165,27 @@ struct CalendarMathTests {
         #expect(grid.last == CalendarDay(year: 2026, month: 10, day: 11))
     }
 
+    /// A device set to the Buddhist calendar is in the year 2569 when
+    /// others are in 2026. Days are saved as Gregorian, so they must not
+    /// be read through the device's own calendar.
+    @Test func daysAreGregorianWhateverTheDeviceCalendar() {
+        #expect(Calendar.planner.identifier == .gregorian)
+        let moment = Date(timeIntervalSince1970: 1_800_000_000) // January 2027
+        #expect(CalendarDay(moment).year == 2027)
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = Calendar.planner.timeZone
+        #expect(CalendarDay(moment, calendar: buddhist).year == 2570)
+    }
+
+    @Test func onlyDatesThatExistAreReal() {
+        #expect(CalendarDay(year: 2028, month: 2, day: 29).isRealDate)
+        #expect(!CalendarDay(year: 2026, month: 2, day: 29).isRealDate)
+        #expect(!CalendarDay(year: 2026, month: 2, day: 30).isRealDate)
+        #expect(!CalendarDay(year: 2026, month: 13, day: 1).isRealDate)
+        #expect(!CalendarDay(year: 2026, month: 4, day: 31).isRealDate)
+        #expect(!CalendarDay(year: 2026, month: 9, day: 0).isRealDate)
+    }
+
     @Test func dayArithmeticCrossesMonths() {
         #expect(sep17.adding(days: 14) == CalendarDay(year: 2026, month: 10, day: 1))
         #expect(sep17.calendarMonth.adding(months: -1) == CalendarMonth(year: 2026, month: 8))

@@ -152,7 +152,7 @@ private struct DayPager: View {
     }
 
     private static func days(from start: CalendarDay, to end: CalendarDay) -> Int {
-        Calendar.current.dateComponents([.day], from: start.date(), to: end.date()).day ?? 0
+        Calendar.planner.dateComponents([.day], from: start.date(), to: end.date()).day ?? 0
     }
 }
 

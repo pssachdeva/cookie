@@ -54,7 +54,9 @@ public struct EntryBar: View {
         if day == today { return "Add a task for today" }
         if day == today.adding(days: 1) { return "Add a task for tomorrow" }
         if day == today.adding(days: -1) { return "Add a task for yesterday" }
-        let within = abs(day.date().timeIntervalSince(today.date())) < 6 * 86_400
+        // Counted in days, not seconds: a week with a clock change in it
+        // is an hour short or long.
+        let within = day > today.adding(days: -6) && day < today.adding(days: 6)
         let label = day.date().formatted(within ? .dateTime.weekday(.wide) : .dateTime.month(.abbreviated).day())
         return "Add a task for \(label)"
     }
