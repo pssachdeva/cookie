@@ -70,11 +70,14 @@ struct CalendarView: View {
     }
 
     private func grid(for month: CalendarMonth, isLive: Bool) -> some View {
-        MonthGridView(
+        // The whole grid, so the dimmed days of the neighboring months get
+        // their dots too.
+        let days = month.gridDays()
+        return MonthGridView(
             month: month,
             selected: navigation.selectedDay,
             today: navigation.today,
-            unfinished: store.daysWithUnfinished(in: month),
+            unfinished: store.daysWithUnfinished(from: days[0], through: days[days.count - 1]),
             selectionNamespace: selectionNamespace,
             isLive: isLive,
             onSelect: { day in withAnimation(.smooth(duration: 0.3)) { navigation.select(day) } }

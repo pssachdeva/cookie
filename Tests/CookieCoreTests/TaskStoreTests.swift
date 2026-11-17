@@ -143,12 +143,25 @@ struct TaskStoreTests {
         #expect(place < order.firstIndex(of: last)!)
     }
 
+    @Test func unfinishedDaysAreReportedAcrossTheGrid() {
+        let store = TaskStore()
+        let sep30 = CalendarDay(year: 2026, month: 9, day: 30)
+        store.add("left over", to: sep30)
+        store.add("too early", to: CalendarDay(year: 2026, month: 9, day: 20))
+        // October's grid starts in late September.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1
+        let grid = CalendarMonth(year: 2026, month: 10).gridDays(calendar: calendar)
+        #expect(grid.first == CalendarDay(year: 2026, month: 9, day: 27))
+        #expect(store.daysWithUnfinished(from: grid.first!, through: grid.last!) == [sep30])
+    }
+
     @Test func deleteIsRestorable() {
         let store = TaskStore()
         let id = store.add("gone", to: sep17)!.id
         store.delete(id)
         #expect(store.activeTasks(on: sep17).isEmpty)
-        #expect(store.daysWithUnfinished(in: sep17.calendarMonth).isEmpty)
+        #expect(store.daysWithUnfinished(from: sep17, through: sep17).isEmpty)
         store.restore(id)
         #expect(store.activeTasks(on: sep17).map(\.id) == [id])
     }
