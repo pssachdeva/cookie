@@ -49,9 +49,11 @@ public final class TaskStore {
             .sorted { ($0.day, $0.order, $0.id.uuidString) < ($1.day, $1.order, $1.id.uuidString) }
     }
 
-    /// Days in a month that have at least one unfinished task.
-    public func daysWithUnfinished(in month: CalendarMonth) -> Set<CalendarDay> {
-        Set(tasks.filter { month.contains($0.day) && $0.isActive }.map(\.day))
+    /// Days from `first` through `last` that have at least one unfinished
+    /// task. A range rather than a month, since the month grid also shows
+    /// the last days of the month before and the first of the month after.
+    public func daysWithUnfinished(from first: CalendarDay, through last: CalendarDay) -> Set<CalendarDay> {
+        Set(tasks.filter { $0.day >= first && $0.day <= last && $0.isActive }.map(\.day))
     }
 
     // MARK: Operations
