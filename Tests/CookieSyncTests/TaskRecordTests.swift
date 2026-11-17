@@ -48,6 +48,13 @@ struct TaskRecordTests {
         #expect(CalendarDay(isoString: "garbage") == nil)
     }
 
+    @Test func malformedDayStringsAreRejected() {
+        #expect(CalendarDay(isoString: "2028-02-29") == CalendarDay(year: 2028, month: 2, day: 29))
+        for bad in ["2026-extra-11-16", "2026-13-01", "2026-02-30", "2026-09", "2026--09-24", "2026-09-+4", "-2026-09-24"] {
+            #expect(CalendarDay(isoString: bad) == nil, "\(bad)")
+        }
+    }
+
     @Test func systemFieldsRoundTrip() throws {
         let record = TaskRecord.record(for: TaskItem(text: "x", day: sep24, order: 0))
         let restored = try #require(CKRecord.fromSystemFields(record.encodedSystemFields))

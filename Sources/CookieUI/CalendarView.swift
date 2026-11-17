@@ -18,7 +18,7 @@ struct CalendarView: View {
     #endif
     let navigation: DayNavigation
 
-    private let calendar = Calendar.current
+    private let calendar = Calendar.planner
 
     var body: some View {
         VStack(spacing: 0) {

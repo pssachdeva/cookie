@@ -90,10 +90,16 @@ extension CalendarDay {
         String(format: "%04d-%02d-%02d", year, month, day)
     }
 
+    /// Nil unless the string is exactly a year, a month, and a day that
+    /// exist, so a malformed record is skipped rather than half-read.
     init?(isoString: String) {
-        let parts = isoString.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        self.init(year: parts[0], month: parts[1], day: parts[2])
+        let parts = isoString.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { ("0"..."9").contains($0) } }),
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
+        else { return nil }
+        self.init(year: year, month: month, day: day)
+        guard isRealDate else { return nil }
     }
 }
 
