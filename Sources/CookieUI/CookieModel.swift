@@ -52,6 +52,9 @@ public final class CookieModel {
     /// Writes any pending save now. Call when the app quits or goes to the
     /// background, where it may be ended without further notice.
     public func flush() {
+        // A task checked a moment ago is still rolling off its row and not
+        // yet completed in the store.
+        CompletionBatch.flushNow()
         file?.saveNow(store.tasks)
     }
 

@@ -178,6 +178,10 @@ public struct DayListView: View {
         // made on another page.
         .onChange(of: storedCompletedExpanded) { _, value in completedExpanded = value }
         .onChange(of: storedEarlierExpanded) { _, value in earlierExpanded = value }
+        // A row checked just before the list changes days is still rolling;
+        // complete it now rather than show it unchecked again.
+        .onDisappear { CompletionBatch.flushNow() }
+        .onChange(of: isCurrentPage) { _, current in if !current { CompletionBatch.flushNow() } }
     }
 
     private var dayHeader: some View {
@@ -658,22 +662,40 @@ enum CompletionBatch {
     /// keeps the order they were checked off in.
     private static var pending: [(id: UUID, at: Date)] = []
     private static var flush: DispatchWorkItem?
+    private static weak var store: TaskStore?
 
     /// Marks `id` completed once `delay` has passed with no further check;
     /// each new check restarts the wait for the whole batch.
     static func complete(_ id: UUID, in store: TaskStore, after delay: TimeInterval) {
+        self.store = store
         pending.append((id, .now))
         flush?.cancel()
         let work = DispatchWorkItem {
-            let batch = pending
-            pending = []
-            flush = nil
-            withAnimation(.easeOut(duration: 0.3)) {
-                for item in batch { store.setCompleted(item.id, true, at: item.at) }
-            }
+            withAnimation(.easeOut(duration: 0.3)) { commit() }
         }
         flush = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Completes whatever is still waiting, without the wait. Until then a
+    /// check lives only here, so this runs before the tasks are saved at
+    /// quit or on the way to the background, and when the rows that were
+    /// rolling leave the screen.
+    static func flushNow() {
+        flush?.cancel()
+        commit()
+    }
+
+    private static func commit() {
+        let batch = pending
+        pending = []
+        flush = nil
+        guard let store else { return }
+        for item in batch {
+            // Deleted, or completed from the other window, while it rolled.
+            guard store.task(item.id)?.isActive == true else { continue }
+            store.setCompleted(item.id, true, at: item.at)
+        }
     }
 }
 
