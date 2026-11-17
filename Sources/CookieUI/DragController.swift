@@ -50,6 +50,11 @@ public final class DragController {
     var rowFrames: [UUID: CGRect] = [:]
     /// Active rows of the selected day, in list order.
     var activeRows: [UUID] = []
+    /// Rows showing in the Earlier section, and its header. The rows are
+    /// empty when the section isn't showing; the header's frame is only
+    /// meaningful while there are rows.
+    var earlierRows: [UUID] = []
+    var earlierHeaderFrame: CGRect = .zero
     var activeListFrame: CGRect = .zero
     var listFrame: CGRect = .zero
     var previousMonthFrame: CGRect = .zero
@@ -225,9 +230,17 @@ public final class DragController {
         let p = session.location
         if let day = hitCell(at: p) { return .calendar(day) }
         if listFrame.contains(p) {
+            // An Earlier row let go over its own section stays on its day.
+            // Only a drop into today's list reassigns it, so picking a row
+            // up and putting it back down changes nothing.
+            if isOverEarlierSection(p), earlierRows.contains(session.taskID) { return .none }
             return .list(navigation.selectedDay, index: insertionIndex(at: p))
         }
         return .none
+    }
+
+    private func isOverEarlierSection(_ p: CGPoint) -> Bool {
+        earlierHeaderFrame.contains(p) || earlierRows.contains { rowFrames[$0]?.contains(p) == true }
     }
 
     /// Y of the insertion line, or nil when there is nothing to show.
