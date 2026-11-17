@@ -91,17 +91,60 @@ public final class TaskStore {
 
     /// Moves a task to `day`, placing it before `index` in that day's active
     /// list (so `index == count` appends). Completed tasks keep their state
-    /// and simply change day.
+    /// and simply change day. A move to where the task already is changes
+    /// nothing, so a row picked up and put back isn't rewritten or synced.
     public func move(_ id: UUID, to day: CalendarDay, at index: Int) {
         guard let item = task(id) else { return }
+        guard item.isActive else {
+            if item.day != day { update(id, .placement) { $0.day = day } }
+            return
+        }
         let neighbors = activeTasks(on: day).filter { $0.id != id }
         let clamped = max(0, min(index, neighbors.count))
-        let lower = clamped > 0 ? neighbors[clamped - 1].order : nil
-        let upper = clamped < neighbors.count ? neighbors[clamped].order : nil
+        let lower = clamped > 0 ? neighbors[clamped - 1] : nil
+        let upper = clamped < neighbors.count ? neighbors[clamped] : nil
+        if item.day == day,
+           lower.map({ $0.order < item.order }) ?? true,
+           upper.map({ item.order < $0.order }) ?? true {
+            return
+        }
+        let order = OrderKey.between(lower?.order, upper?.order)
+        if let lower, let upper, !(lower.order < order && order < upper.order) {
+            // No key is left between the two neighbors: halving the same
+            // gap runs out of precision after some fifty moves, and two
+            // devices can hand out the same key.
+            renumber(day, placing: id, before: upper.id)
+            return
+        }
         update(id, .placement) {
             $0.day = day
-            $0.order = item.isActive ? OrderKey.between(lower, upper) : $0.order
+            $0.order = order
         }
+    }
+
+    /// Gives every task on `day` a whole-number key in its current order,
+    /// with `id` placed just before `next`. Completed tasks are renumbered
+    /// along with the active ones, so unchecking one still returns it to
+    /// its place among them.
+    private func renumber(_ day: CalendarDay, placing id: UUID, before next: UUID) {
+        var ordered = tasks
+            .filter { $0.day == day && !$0.isDeleted && $0.id != id }
+            .sorted(by: Self.byOrder)
+            .map(\.id)
+        ordered.insert(id, at: ordered.firstIndex(of: next) ?? ordered.count)
+        let positions = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1, Double($0)) })
+        let now = Date.now
+        var changed: Set<UUID> = []
+        for index in tasks.indices {
+            let taskID = tasks[index].id
+            guard let order = positions[taskID],
+                  taskID == id || tasks[index].order != order else { continue }
+            tasks[index].day = day
+            tasks[index].order = order
+            tasks[index].touch(.placement, at: now)
+            changed.insert(taskID)
+        }
+        onChange?(Change(ids: changed, origin: .local))
     }
 
     /// Moves a task to `day` at the top or bottom per the insertion setting.

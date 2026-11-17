@@ -80,6 +80,69 @@ struct TaskStoreTests {
         #expect(store.activeTasks(on: sep18).map(\.text) == ["x", "moving", "y"])
     }
 
+    @Test func droppingATaskWhereItIsChangesNothing() {
+        let store = TaskStore()
+        let ids = ["a", "b", "c"].map { store.add($0, to: sep17)!.id }
+        let before = store.tasks
+        var changes = 0
+        store.onChange = { _ in changes += 1 }
+
+        // Each position counts the other rows only, as a drop does.
+        for (index, id) in ids.enumerated() { store.move(id, to: sep17, at: index) }
+        // The same through the menu's "move to this day".
+        store.move(ids[2], to: sep17)
+        store.setCompleted(ids[0], true)
+        changes = 0
+        store.move(ids[0], to: sep17)
+
+        #expect(changes == 0)
+        #expect(store.tasks.map(\.order) == before.map(\.order))
+        #expect(store.task(ids[1]) == before[1])
+    }
+
+    @Test func manyMovesIntoTheSameGapKeepTheirOrder() {
+        let store = TaskStore()
+        store.add("top", to: sep17)
+        store.add("first", to: sep17)
+        store.add("last", to: sep17)
+        var mostChangedAtOnce = 0
+        store.onChange = { mostChangedAtOnce = max(mostChangedAtOnce, $0.ids.count) }
+        // Each new task goes just under "first", above the one before it.
+        // Halving the gap under a key of 1 runs out of room at the 53rd.
+        var expected: [String] = []
+        for number in 1...60 {
+            let id = store.add("task \(number)", to: sep17)!.id
+            store.move(id, to: sep17, at: 2)
+            expected.insert("task \(number)", at: 0)
+        }
+        let active = store.activeTasks(on: sep17)
+        #expect(active.map(\.text) == ["top", "first"] + expected + ["last"])
+        #expect(Set(active.map(\.order)).count == active.count)
+        // The day was renumbered along the way, not only the moved task.
+        #expect(mostChangedAtOnce > 1)
+    }
+
+    @Test func aCompletedTaskKeepsItsPlaceWhenTheDayIsRenumbered() {
+        let store = TaskStore()
+        store.add("top", to: sep17)
+        let first = store.add("first", to: sep17)!.id
+        let middle = store.add("middle", to: sep17)!.id
+        let last = store.add("last", to: sep17)!.id
+        store.setCompleted(middle, true)
+        var mostChangedAtOnce = 0
+        store.onChange = { mostChangedAtOnce = max(mostChangedAtOnce, $0.ids.count) }
+        for number in 1...60 {
+            let id = store.add("task \(number)", to: sep17)!.id
+            store.move(id, to: sep17, at: 2)
+        }
+        #expect(mostChangedAtOnce > 1)
+        store.setCompleted(middle, false)
+        let order = store.activeTasks(on: sep17).map(\.id)
+        let place = try! #require(order.firstIndex(of: middle))
+        #expect(order.firstIndex(of: first)! < place)
+        #expect(place < order.firstIndex(of: last)!)
+    }
+
     @Test func deleteIsRestorable() {
         let store = TaskStore()
         let id = store.add("gone", to: sep17)!.id
