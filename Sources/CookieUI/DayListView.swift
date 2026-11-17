@@ -115,6 +115,7 @@ public struct DayListView: View {
                 Section {
                     if !earlier.isEmpty {
                         SectionHeader(title: "Earlier", count: earlier.count, expanded: $earlierExpanded)
+                            .reportFrame { if isCurrentPage { drag.earlierHeaderFrame = $0 } }
                         if earlierExpanded {
                             ForEach(earlier) { task in
                                 TaskRow(task: task, showsDate: true, onDelete: delete)
@@ -168,6 +169,14 @@ public struct DayListView: View {
             scrolled = isScrolled
         }
         .reportFrame { if isCurrentPage { drag.listFrame = $0 } }
+        // The rows showing under Earlier, so a drag knows when one of them
+        // is released over its own section.
+        .onChange(of: earlierExpanded ? earlier.map(\.id) : [], initial: true) { _, ids in
+            if isCurrentPage { drag.earlierRows = ids }
+        }
+        .onChange(of: isCurrentPage) { _, current in
+            if current { drag.earlierRows = earlierExpanded ? earlier.map(\.id) : [] }
+        }
         .onAppear {
             completedExpanded = storedCompletedExpanded
             earlierExpanded = storedEarlierExpanded
@@ -453,6 +462,14 @@ struct TaskRow: View {
         #endif
         .opacity(isBeingDragged ? 0.25 : 1)
         .reportFrame { windowFrame.rect = $0; if isCurrentPage { drag.rowFrames[task.id] = $0 } }
+        // A row that has left the list (scrolled far off, or its section
+        // folded) must not leave its last frame behind as a drop target.
+        // Only its own frame: when the list changes days, the same task can
+        // already be showing in the new list (under Earlier, say), whose
+        // row has reported a frame of its own by the time this one goes.
+        .onDisappear {
+            if drag.rowFrames[task.id] == windowFrame.rect { drag.rowFrames[task.id] = nil }
+        }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
         #if os(macOS)
         // No row drag while editing, so dragging selects text instead.
