@@ -106,6 +106,31 @@ public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
     private static func otherWins(_ mine: Date, _ theirs: Date, tie: Bool) -> Bool {
         theirs.isLater(than: mine) || (theirs.isSameInstant(as: mine) && tie)
     }
+
+    /// Whether two versions of a task hold the same values. Times compare
+    /// as instants, since a time can come back from the task file or
+    /// CloudKit a millisecond off. `modifiedAt` follows from the field
+    /// times, so it isn't compared on its own.
+    public func hasSameContent(as other: TaskItem) -> Bool {
+        id == other.id
+            && text == other.text
+            && day == other.day
+            && order == other.order
+            && Self.sameInstant(completedAt, other.completedAt)
+            && Self.sameInstant(deletedAt, other.deletedAt)
+            && createdAt.isSameInstant(as: other.createdAt)
+            && FieldTimes.Field.allCases.allSatisfy {
+                fieldTimes[$0].isSameInstant(as: other.fieldTimes[$0])
+            }
+    }
+
+    private static func sameInstant(_ a: Date?, _ b: Date?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): true
+        case (let a?, let b?): a.isSameInstant(as: b)
+        default: false
+        }
+    }
 }
 
 extension Date {

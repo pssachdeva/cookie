@@ -72,4 +72,34 @@ struct MergeTests {
         b.touch(.text, at: t0 + 10)
         #expect(a.merged(with: b) == b.merged(with: a))
     }
+
+    @Test func sameContentAllowsForAMillisecondOfDrift() {
+        var completed = base()
+        completed.completedAt = t0 + 20
+        completed.touch(.completion, at: t0 + 20)
+        // As it comes back from the task file or CloudKit.
+        var reloaded = completed
+        reloaded.completedAt = t0 + 20.0004
+        reloaded.fieldTimes.completion = t0 + 20.0004
+        #expect(completed.hasSameContent(as: reloaded))
+        #expect(completed.hasSameContent(as: completed))
+    }
+
+    @Test func sameContentSeesEveryKindOfChange() {
+        let original = base()
+        var text = original
+        text.text = "edited"
+        var moved = original
+        moved.order = 2
+        var completed = original
+        completed.completedAt = t0 + 20
+        var deleted = original
+        deleted.deletedAt = t0 + 20
+        // Same values, changed later: still a different version.
+        var touched = original
+        touched.touch(.text, at: t0 + 20)
+        for changed in [text, moved, completed, deleted, touched] {
+            #expect(!original.hasSameContent(as: changed))
+        }
+    }
 }
